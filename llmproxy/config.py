@@ -63,9 +63,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     log_format: str = "console"  # "console" (colored) or "json" (structured)
 
-    class Config:
-        env_prefix = "LLM_PROXY_"
-
     # Cost tracking
     enable_cost_tracking: bool = True
     cost_upstream_price: float = 0.01   # $ per 1K tokens
@@ -74,6 +71,9 @@ class Settings(BaseSettings):
 
     class Config:
         env_prefix = "LLM_PROXY_"
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        extra = "ignore"  # Allow extra env vars not defined in Settings
 
 
 settings = Settings()
