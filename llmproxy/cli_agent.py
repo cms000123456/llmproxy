@@ -475,7 +475,23 @@ class Agent:
             # Execute tools and append results
             for tc in tool_calls:
                 name = tc.function.name
-                args = json.loads(tc.function.arguments)
+                
+                # Parse JSON arguments with error handling
+                raw_args = tc.function.arguments
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError as e:
+                    # Try to fix common LLM JSON issues
+                    try:
+                        # Handle trailing commas, single quotes, unescaped newlines
+                        import re
+                        fixed = raw_args.replace("'", '"')
+                        fixed = re.sub(r',\s*}', '}', fixed)
+                        fixed = re.sub(r',\s*]', ']', fixed)
+                        args = json.loads(fixed)
+                    except Exception:
+                        console.print(f"[dim red]⚠️ Invalid JSON in tool call: {e}[/dim red]")
+                        args = {"_raw": raw_args, "_error": str(e)}
                 
                 # Pretty-print tool call with context
                 self._print_tool_call(name, args)
@@ -486,7 +502,7 @@ class Agent:
                 self._print_tool_result(name, result)
                 
                 # Some providers (e.g. kimi-for-coding) omit tool_call_id; generate a fallback
-                tool_call_id = tc.id or f"call_{hash(json.dumps(args, sort_keys=True))}"
+                tool_call_id = tc.id or f"call_{hash(json.dumps(args, sort_keys=True, default=str))}"
                 self.messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call_id,
