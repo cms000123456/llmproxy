@@ -14,7 +14,7 @@
   - **Tests:** Add auth tests to `tests/test_server.py`
   - **Time Estimate:** 1 day
 
-- [ ] **TODO-002:** Add request/response sanitization for PII
+- [x] ~~**TODO-002:**~~ Add request/response sanitization for PII
   - **File:** `llmproxy/middleware/sanitize.py` (new)
   - **Features:** Credit card, API key, email redaction
   - **Time Estimate:** 4 hours
@@ -25,7 +25,7 @@
   - **Config:** Add `max_retries: int = 3`, `retry_backoff: float = 2.0`
   - **Time Estimate:** 4 hours
 
-- [ ] **TODO-004:** Add graceful shutdown handling
+- [x] ~~**TODO-004:**~~ Add graceful shutdown handling
   - **File:** Modify `llmproxy/server.py` lifespan
   - **Features:** Close HTTP client, flush cache on SIGTERM
   - **Time Estimate:** 2 hours
@@ -121,6 +121,8 @@
 - [x] ~~Create comprehensive test suite (95 tests)~~
 - [x] ~~Add security middleware (rate limiting, body size, headers)~~
 - [x] ~~Fix path traversal vulnerability~~
+- [x] ~~Add request/response sanitization for PII (TODO-002)~~
+- [x] ~~Add graceful shutdown handling (TODO-004)~~
 - [x] ~~Verify secrets not in git~~
 
 ---
@@ -128,10 +130,10 @@
 ## 📊 Progress Tracking
 
 ```
-HIGH:     4/4  pending  ████░░░░░░  0%
-MEDIUM:   7/7  pending  ░░░░░░░░░░  0%
-LOW:      6/6  pending  ░░░░░░░░░░  0%
-TOTAL:   17/17 pending  ░░░░░░░░░░  0%
+HIGH:     2/4  complete  ████████░░  50%
+MEDIUM:   0/7  pending   ░░░░░░░░░░  0%
+LOW:      0/6  pending   ░░░░░░░░░░  0%
+TOTAL:    2/17 complete  ██░░░░░░░░  12%
 ```
 
 ---

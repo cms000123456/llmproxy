@@ -8,13 +8,41 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.prompt import Prompt
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.application import get_app
 from rich.table import Table
 
 from llmproxy.cli_agent import Agent, _list_sessions, _get_project_id
 
 app = typer.Typer(help="Coding agent CLI — interacts with your filesystem via LLM tools.")
 console = Console()
+
+# Available slash commands for autocompletion
+SLASH_COMMANDS = [
+    ("/exit", "Save session and exit"),
+    ("/quit", "Save session and exit (alias)"),
+    ("/help", "Show available commands"),
+    ("/usage", "Show token usage"),
+    ("/savings", "Show proxy savings"),
+]
+
+
+class SlashCommandCompleter(Completer):
+    """Completer for slash commands."""
+    
+    def get_completions(self, document, complete_event):
+        text = document.text
+        if text.startswith("/"):
+            for cmd, desc in SLASH_COMMANDS:
+                if cmd.startswith(text):
+                    yield Completion(
+                        cmd,
+                        start_position=-len(text),
+                        display=cmd,
+                        display_meta=desc,
+                    )
 
 
 def _get_env(var: str, default: str = "") -> str:
@@ -127,9 +155,31 @@ def run(
         title="Welcome",
     ))
 
+    # Setup prompt toolkit bindings
+    bindings = KeyBindings()
+    
+    @bindings.add("c-d")
+    def _(event):
+        """Ctrl-D to exit gracefully."""
+        event.app.exit(result="/exit")
+    
+    # Ctrl-C is not bound - it will cancel input naturally (raise KeyboardInterrupt)
+    
+    # Show available commands hint on startup
+    commands_hint = " | ".join([f"[cyan]{cmd}[/cyan]" for cmd, _ in SLASH_COMMANDS[:3]]) + " | [dim]...[/dim]"
+    console.print(f"[dim]Commands: {commands_hint} Type / for suggestions[/dim]")
+    console.print()
+    
     while True:
         try:
-            user_input = Prompt.ask("[bold cyan]You[/bold cyan]")
+            # Use prompt_toolkit for better UX (autocompletion, etc.)
+            user_input = pt_prompt(
+                "> ",
+                completer=SlashCommandCompleter(),
+                complete_while_typing=True,
+                key_bindings=bindings,
+                enable_history_search=True,
+            )
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]Session saved. Goodbye.[/dim]")
             break
@@ -148,6 +198,9 @@ def run(
                 "  [cyan]/usage[/cyan]          - Show current session token usage\n"
                 "  [cyan]/savings[/cyan]         - Show proxy savings (filtering/caching)\n"
                 "  [cyan]/help[/cyan]            - Show this help message\n\n"
+                "[bold]Keyboard Shortcuts:[/bold]\n"
+                "  [cyan]Ctrl+C[/cyan]            - Interrupt current chat\n"
+                "  [cyan]Ctrl+D[/cyan]            - Exit agent\n\n"
                 "[bold]Usage Display:[/bold]\n"
                 "  [dim]Usage: 1,234 tokens total (1,000 in / 234 out) | Cost: ~12¢[/dim]\n"
                 "    - [bold]in:[/bold] Tokens sent to AI (your messages + context)\n"
@@ -175,12 +228,18 @@ def run(
             console.print(f"[dim]Unknown command: {user_input}. Type /help for available commands.[/dim]")
             continue
 
-        with console.status("[bold green]Thinking...[/bold green]"):
-            reply = agent.chat(user_input)
+        try:
+            with console.status("[bold green]Thinking...[/bold green]"):
+                reply = agent.chat(user_input)
 
-        console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
-        console.print(agent.get_usage_summary())
-        console.print(agent.get_proxy_savings())
+            console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
+            console.print(agent.get_usage_summary())
+            console.print(agent.get_proxy_savings())
+        except KeyboardInterrupt:
+            console.print("\n[dim yellow]⏹ Chat interrupted.[/dim yellow]")
+            # Add a placeholder message so the conversation context is preserved
+            agent.messages.append({"role": "assistant", "content": "[Response interrupted by user]"})
+            agent._save()
 
 
 if __name__ == "__main__":

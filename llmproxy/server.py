@@ -2,6 +2,9 @@
 
 import asyncio
 import json
+import logging
+import signal
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -19,8 +22,21 @@ from .compressors import compress_messages, count_message_tokens
 from .middleware.sanitize import SanitizationMiddleware
 
 
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Maximum request body size (10MB)
 MAX_BODY_SIZE = 10 * 1024 * 1024
+
+# Graceful shutdown settings
+GRACEFUL_SHUTDOWN_TIMEOUT = 30.0  # seconds to wait for inflight requests
+_shutdown_event = asyncio.Event()
+_inflight_requests = 0
+_inflight_lock = asyncio.Lock()
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -77,6 +93,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class InflightRequestMiddleware(BaseHTTPMiddleware):
+    """Track inflight requests for graceful shutdown."""
+    async def dispatch(self, request, call_next):
+        global _inflight_requests
+        async with _inflight_lock:
+            _inflight_requests += 1
+        
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            async with _inflight_lock:
+                _inflight_requests -= 1
+
+
 def _kimi_code_headers() -> dict:
     device_id = settings.kimi_code_device_id or str(uuid.uuid4())
     return {
@@ -93,9 +124,47 @@ _http_client: httpx.AsyncClient | None = None
 _cache: LRUCache | None = None
 
 
+def _handle_signal(sig, frame):
+    """Handle shutdown signals (SIGTERM, SIGINT)."""
+    signal_name = signal.Signals(sig).name
+    logger.info(f"Received {signal_name}, initiating graceful shutdown...")
+    _shutdown_event.set()
+
+
+async def _wait_for_inflight_requests(timeout: float = GRACEFUL_SHUTDOWN_TIMEOUT):
+    """Wait for inflight requests to complete."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        async with _inflight_lock:
+            if _inflight_requests == 0:
+                logger.info("All inflight requests completed")
+                return True
+        logger.info(f"Waiting for {_inflight_requests} inflight requests to complete...")
+        await asyncio.sleep(0.5)
+    
+    async with _inflight_lock:
+        if _inflight_requests > 0:
+            logger.warning(f"Timeout reached, {inflight_requests} requests still inflight")
+    return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client, _cache
+    
+    # Setup signal handlers for graceful shutdown
+    if sys.platform != "win32":
+        loop = asyncio.get_event_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, lambda s=sig: _handle_signal(s, None))
+    else:
+        # Windows doesn't support add_signal_handler
+        signal.signal(signal.SIGINT, _handle_signal)
+        signal.signal(signal.SIGTERM, _handle_signal)
+    
+    # Startup
+    logger.info("Starting LLM Proxy server...")
+    
     # Avoid double /v1 when base_url already ends with it and client sends /v1/chat/completions
     base_url = settings.upstream_base_url
     if base_url.rstrip("/").endswith("/v1"):
@@ -111,22 +180,46 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(120.0, connect=10.0),
     )
     _cache = LRUCache(max_size=settings.cache_max_size, ttl_seconds=settings.cache_ttl_seconds)
+    
+    logger.info(f"Connected to upstream: {base_url}")
+    logger.info(f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s")
+    
     yield
-    await _http_client.aclose()
+    
+    # Shutdown
+    logger.info("Shutting down LLM Proxy server...")
+    
+    # Wait for inflight requests to complete
+    await _wait_for_inflight_requests(GRACEFUL_SHUTDOWN_TIMEOUT)
+    
+    # Close HTTP client
+    if _http_client:
+        logger.info("Closing HTTP client connections...")
+        await _http_client.aclose()
+    
+    # Log final metrics
+    if _cache:
+        stats = _cache.stats()
+        logger.info(f"Cache stats at shutdown: {stats}")
+    
+    summary = METRICS.summary()
+    logger.info(f"Final metrics: {summary}")
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(title="LLM Proxy", version="0.1.0", lifespan=lifespan)
 
-# Add security middleware (order matters - sanitize before other processing)
+# Add middleware (order matters - sanitize before other processing)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SanitizationMiddleware, enabled=True)
+app.add_middleware(InflightRequestMiddleware)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "inflight_requests": _inflight_requests}
 
 
 @app.get("/metrics")
@@ -199,8 +292,8 @@ async def proxy(request: Request, path: str):
                 response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
                 payload.get("model", "gpt-4")
             ),
-            latency_ms=cached_latency,
-            cached=True
+            cached=True,
+            latency_ms=cached_latency
         )
         return Response(
             content=response_body,
@@ -208,48 +301,51 @@ async def proxy(request: Request, path: str):
             headers={"Content-Type": "application/json", "X-Cache": "HIT"}
         )
 
-    # Upstream request
+    # Proxy to upstream
+    if _http_client is None:
+        return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
+
     try:
-        upstream_resp = await _http_client.request(
+        upstream_response = await _http_client.request(
             method=method,
             url=f"/{path}",
             headers=headers,
-            json=transformed_payload if payload else None,
+            json=transformed_payload if transformed_payload else None,
+            content=body_bytes if not transformed_payload else None,
         )
-        upstream_resp.raise_for_status()
-        response_data = upstream_resp.json()
-    except httpx.HTTPStatusError as e:
-        METRICS.record_error()
-        return JSONResponse(
-            status_code=e.response.status_code,
-            content={"error": f"Upstream error: {e.response.text}"}
-        )
-    except Exception as e:
-        METRICS.record_error()
-        return JSONResponse(
-            status_code=502,
-            content={"error": f"Proxy error: {str(e)}"}
-        )
+    except httpx.TimeoutException:
+        return JSONResponse(status_code=504, content={"error": "Upstream timeout"})
+    except httpx.ConnectError:
+        return JSONResponse(status_code=502, content={"error": "Upstream connection failed"})
+
+    latency = (time.perf_counter() - start) * 1000
+
+    response_body = upstream_response.content
+    try:
+        response_data = json.loads(response_body)
+    except json.JSONDecodeError:
+        response_data = None
+
+    # Cache the response if it's a chat completion
+    if is_chat_completion and settings.enable_cache and _cache is not None and response_data:
+        _cache.set(transformed_payload, response_data)
 
     # Record metrics
-    latency_ms = (time.perf_counter() - start) * 1000
-    downstream_messages = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    downstream_tokens = count_message_tokens(downstream_messages, payload.get("model", "gpt-4"))
+    downstream_tokens = 0
+    if response_data and "choices" in response_data:
+        for choice in response_data.get("choices", []):
+            content = choice.get("message", {}).get("content", "")
+            downstream_tokens += count_message_tokens(content, payload.get("model", "gpt-4"))
 
     METRICS.record_request(
         upstream_tokens=original_token_count,
         downstream_tokens=downstream_tokens,
-        latency_ms=latency_ms,
-        cached=False
+        cached=False,
+        latency_ms=latency
     )
 
-    # Cache the response
-    if is_chat_completion and settings.enable_cache and _cache is not None:
-        _cache.set(transformed_payload, response_data)
-
-    response_body = json.dumps(response_data).encode("utf-8")
     return Response(
         content=response_body,
-        status_code=upstream_resp.status_code,
+        status_code=upstream_response.status_code,
         headers={"Content-Type": "application/json", "X-Cache": "MISS"}
     )
