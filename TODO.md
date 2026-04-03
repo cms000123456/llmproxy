@@ -116,9 +116,11 @@
   - **Time Estimate:** 1-2 days
 
 ### Developer Experience
-- [ ] **TODO-015:** Add request/response examples to documentation
+- [x] ~~**TODO-015:**~~ Add development stack documentation
   - **File:** Update `HOWTO.md`
+  - **Features:** Document docker-compose.dev.yml with Redis, Jaeger, Prometheus, Grafana
   - **Time Estimate:** 2 hours
+  - **Note:** Completed 2025-01-15
 
 - [x] ~~**TODO-016:**~~ Create docker-compose for local development
   - **File:** `docker-compose.dev.yml`
@@ -139,6 +141,7 @@
 | TODO | Description | Date Completed |
 |------|-------------|----------------|
 | TODO-016 | Docker-compose dev stack (Redis, Jaeger, Prometheus, Grafana) | 2025-01-15 |
+| TODO-015 | Development stack documentation in HOWTO.md | 2025-01-15 |
 | TODO-012 | Prompt templates with variables | 2025-01-15 |
 | TODO-011 | Prometheus metrics endpoint | 2025-01-15 |
 | TODO-010 | Structured logging with structlog | 2025-01-15 |
