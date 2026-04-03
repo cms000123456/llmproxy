@@ -37,7 +37,7 @@ class Agent:
         )
         self.model = model
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        self.max_tool_rounds = 10
+        self.max_tool_rounds = 30
 
     def chat(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})
