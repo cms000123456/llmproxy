@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 import json
-import logging
+
 import random
 import signal
 import sys
@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
+from .logging_config import configure_logging, get_logger
 from .storage import create_backend, MemoryBackend
 from .metrics import METRICS
 from .filters import filter_messages
@@ -33,12 +34,9 @@ def _make_cache_key(payload: dict) -> str:
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Configure structured logging
+configure_logging(log_level=settings.log_level, log_format=settings.log_format)
+logger = get_logger(__name__)
 
 # Maximum request body size (10MB)
 MAX_BODY_SIZE = 10 * 1024 * 1024

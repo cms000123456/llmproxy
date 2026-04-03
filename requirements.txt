@@ -10,3 +10,4 @@ rich>=13.0.0
 prompt-toolkit>=3.0.0
 
 aiofiles>=23.0.0
+structlog>=24.1.0

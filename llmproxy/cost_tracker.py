@@ -1,7 +1,6 @@
 """Per-API-key cost tracking and budget management."""
 
 import json
-import logging
 import time
 from dataclasses import dataclass, field
 from threading import Lock
@@ -9,8 +8,9 @@ from typing import Optional
 from pathlib import Path
 
 from .config import settings
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

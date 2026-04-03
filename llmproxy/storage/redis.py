@@ -1,7 +1,6 @@
 """Redis storage backend for distributed caching."""
 
 import json
-import logging
 from typing import Optional
 
 try:
@@ -12,8 +11,9 @@ except ImportError:
     RedisError = Exception
 
 from .base import StorageBackend
+from ..logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RedisBackend(StorageBackend):

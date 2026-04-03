@@ -59,8 +59,9 @@ class Settings(BaseSettings):
     kimi_code_device_name: str = "kimi-proxy"
     kimi_code_device_id: str = ""
 
-    # Metrics / logging
-    log_level: str = "INFO"
+    # Logging configuration
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_format: str = "console"  # "console" (colored) or "json" (structured)
 
     class Config:
         env_prefix = "LLM_PROXY_"
