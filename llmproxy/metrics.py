@@ -12,17 +12,33 @@ class Metrics:
     cache_misses: int = 0
     tokens_upstream: int = 0
     tokens_downstream: int = 0
-    tokens_saved: int = 0
+    tokens_saved: int = 0  # Tokens saved from filtering/compression
     errors_total: int = 0
     latencies: list[float] = field(default_factory=list)
     _lock: Lock = field(default_factory=Lock)
 
-    def record_request(self, upstream_tokens: int, downstream_tokens: int, latency_ms: float, cached: bool = False):
+    def record_request(
+        self,
+        upstream_tokens: int,
+        downstream_tokens: int,
+        latency_ms: float,
+        cached: bool = False,
+        tokens_saved_filtering: int = 0
+    ):
+        """Record request metrics.
+        
+        Args:
+            upstream_tokens: Number of tokens sent upstream (after filtering/compression)
+            downstream_tokens: Number of tokens in the response
+            latency_ms: Request latency in milliseconds
+            cached: Whether the response was served from cache
+            tokens_saved_filtering: Tokens saved by filtering/compression (before sending)
+        """
         with self._lock:
             self.requests_total += 1
             self.tokens_upstream += upstream_tokens
             self.tokens_downstream += downstream_tokens
-            self.tokens_saved += max(0, upstream_tokens - downstream_tokens)
+            self.tokens_saved += tokens_saved_filtering
             self.latencies.append(latency_ms)
             # Keep latencies bounded
             if len(self.latencies) > 10_000:

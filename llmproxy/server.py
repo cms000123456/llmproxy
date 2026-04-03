@@ -562,6 +562,13 @@ async def proxy(request: Request, path: str):
         messages = compress_messages(messages, settings, payload.get("model", "gpt-4"))
 
         transformed_payload["messages"] = messages
+        
+        # Calculate actual tokens sent (after filtering/compression)
+        final_token_count = count_message_tokens(messages, payload.get("model", "gpt-4"))
+        # Tokens saved by filtering/compression
+        tokens_saved_filtering = max(0, original_token_count - final_token_count)
+    else:
+        tokens_saved_filtering = 0
 
     # Handle streaming requests differently
     if is_streaming:
@@ -620,6 +627,7 @@ async def proxy(request: Request, path: str):
                 payload.get("model", "gpt-4")
             ),
             cached=True,
+            tokens_saved_filtering=tokens_saved_filtering,
             latency_ms=cached_latency
         )
         # Track cost per API key
@@ -684,6 +692,7 @@ async def proxy(request: Request, path: str):
         upstream_tokens=original_token_count,
         downstream_tokens=downstream_tokens,
         cached=False,
+        tokens_saved_filtering=tokens_saved_filtering,
         latency_ms=latency
     )
     # Track cost per API key
