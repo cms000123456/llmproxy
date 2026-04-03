@@ -49,6 +49,9 @@ Guidelines:
 - Keep shell commands safe and relevant.
 - If a task spans multiple steps, use tools iteratively and confirm each step.
 - Always summarize what you did in your final response.
+- When creating reports or documentation, use the current date (ask if unsure).
+- Do not invent or hallucinate file contents - always read files first.
+- Be concise in your responses and tool usage.
 """
 
 # Store conversations outside the repo to avoid git contamination
