@@ -12,6 +12,7 @@ A practical guide for using the LLM Proxy and Coding Agent CLI.
 - [Project Workflow](#project-workflow)
 - [Session Management](#session-management)
 - [Environment Setup](#environment-setup)
+- [Development Stack](#development-stack)
 - [Docker Deployment](#docker-deployment)
 - [Troubleshooting](#troubleshooting)
 
@@ -533,6 +534,101 @@ spec:
 ```
 
 The proxy handles SIGTERM gracefully with a 30-second timeout for inflight requests.
+
+---
+
+---
+
+## Development Stack
+
+For local development with full observability, use `docker-compose.dev.yml` which includes:
+
+- **LLM Proxy** (port 8080) - With Redis cache backend
+- **Ollama** (port 11434) - Local LLM for compression & summarization
+- **Redis** (port 6379) - Cache backend
+- **Jaeger** (port 16686) - Distributed tracing UI
+- **Prometheus** (port 9090) - Metrics collection
+- **Grafana** (port 3000) - Metrics dashboards
+
+### Starting the Development Stack
+
+```bash
+# Start all services
+docker-compose -f docker-compose.dev.yml up -d
+
+# Pull a lightweight model for Ollama
+docker exec ollama-dev ollama pull llama3.2
+
+# View logs
+docker-compose -f docker-compose.dev.yml logs -f llmproxy
+```
+
+### Accessing Services
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| LLM Proxy | http://localhost:8080 | Main proxy endpoint |
+| Jaeger UI | http://localhost:16686 | Trace visualization |
+| Prometheus | http://localhost:9090 | Metrics querying |
+| Grafana | http://localhost:3000 | Dashboards (login: admin/admin) |
+| Redis | localhost:6379 | Cache (CLI: `redis-cli`) |
+| Ollama | http://localhost:11434 | Local LLM API |
+
+### Configuration
+
+The development stack uses these default settings:
+
+```yaml
+# Cache backend
+LLM_PROXY_CACHE_BACKEND=redis
+LLM_PROXY_REDIS_URL=redis://redis:6379
+
+# Debug logging
+LLM_PROXY_LOG_LEVEL=DEBUG
+
+# Ollama integration
+LLM_PROXY_OLLAMA_BASE_URL=http://ollama:11434
+LLM_PROXY_OLLAMA_ENABLE_COMPRESSION=true
+```
+
+Override via environment variables or `.env` file.
+
+### Stopping the Stack
+
+```bash
+# Stop all services
+docker-compose -f docker-compose.dev.yml down
+
+# Stop and remove volumes (reset data)
+docker-compose -f docker-compose.dev.yml down -v
+```
+
+### Grafana Dashboards
+
+Grafana is pre-configured with Prometheus as a datasource. To create dashboards:
+
+1. Login at http://localhost:3000 (admin/admin)
+2. Go to "Create" → "Dashboard"
+3. Add panels using Prometheus metrics:
+   - `llmproxy_requests_total` - Total request count
+   - `llmproxy_request_duration_seconds` - Request latency
+   - `llmproxy_cache_hits_total` - Cache hit count
+   - `llmproxy_tokens_total` - Token usage
+
+### Jaeger Tracing
+
+View distributed traces:
+
+1. Open http://localhost:16686
+2. Select "llmproxy" service
+3. Click "Find Traces"
+
+Each proxy request is traced with spans for:
+- Request processing
+- Cache lookups
+- Upstream API calls
+- Compression/summarization
+
 
 ---
 
