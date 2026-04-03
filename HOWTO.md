@@ -12,10 +12,11 @@ A practical guide for using the LLM Proxy and Coding Agent CLI.
 - [Project Workflow](#project-workflow)
 - [Session Management](#session-management)
 - [Environment Setup](#environment-setup)
-- [Development Stack](#development-stack)
 - [Docker Deployment](#docker-deployment)
+- [Monitoring & Observability](#monitoring--observability)
+- [Development Stack](#development-stack)
 - [Troubleshooting](#troubleshooting)
-
+- [Tips & Best Practices](#tips--best-practices)
 ---
 
 ## Quick Start
@@ -536,6 +537,186 @@ spec:
 The proxy handles SIGTERM gracefully with a 30-second timeout for inflight requests.
 
 ---
+
+---
+
+## Monitoring & Observability
+
+The LLM Proxy includes comprehensive monitoring capabilities through Prometheus metrics and Grafana dashboards.
+
+### Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Client    │────▶│  LLM Proxy  │────▶│   Upstream  │
+└─────────────┘     └──────┬──────┘     └─────────────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │  /metrics   │
+                    │  /prometheus│
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │  Prometheus │◀── Query metrics
+                    │   :9090     │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │   Grafana   │◀── Visualize
+                    │   :3002     │
+                    └─────────────┘
+```
+
+### Starting the Monitoring Stack
+
+```bash
+# Ensure the Docker network exists
+docker network create llmproxy-net 2>/dev/null || true
+
+# Start monitoring services
+docker compose -f docker-compose.monitoring.yml up -d
+
+# Verify services are running
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep llmproxy
+```
+
+### Accessing the Dashboards
+
+| Service | URL | Credentials | Purpose |
+|---------|-----|-------------|---------|
+| Prometheus | http://localhost:9091 | - | Query metrics, create alerts |
+| Grafana | http://localhost:3002 | admin/admin | Visual dashboards |
+| Proxy Metrics | http://localhost:8080/metrics/prometheus | - | Raw metrics endpoint |
+
+### Understanding the Metrics
+
+#### Request Metrics
+- **llmproxy_requests_total** - Total requests processed (counter)
+- **llmproxy_errors_total** - Failed requests (counter)
+- **llmproxy_avg_latency_ms** - Average response time (gauge)
+
+**PromQL Examples:**
+```promql
+# Requests per second (5m rate)
+rate(llmproxy_requests_total[5m])
+
+# Error rate percentage
+rate(llmproxy_errors_total[5m]) / rate(llmproxy_requests_total[5m]) * 100
+
+# P99 latency approximation
+histogram_quantile(0.99, 
+  rate(llmproxy_request_duration_bucket[5m])
+)
+```
+
+#### Cache Metrics
+- **llmproxy_cache_hits_total** - Cache hits (counter)
+- **llmproxy_cache_misses_total** - Cache misses (counter)
+- **llmproxy_cache_hit_rate** - Hit ratio 0-1 (gauge)
+
+**PromQL Examples:**
+```promql
+# Cache hit rate as percentage
+llmproxy_cache_hit_rate * 100
+
+# Cache efficiency over time
+rate(llmproxy_cache_hits_total[5m]) / 
+  (rate(llmproxy_cache_hits_total[5m]) + rate(llmproxy_cache_misses_total[5m]))
+```
+
+#### Token Metrics
+- **llmproxy_tokens_upstream_total** - Tokens sent to API (counter)
+- **llmproxy_tokens_downstream_total** - Tokens received (counter)
+- **llmproxy_tokens_saved_total** - Tokens saved by optimization (counter)
+
+**PromQL Examples:**
+```promql
+# Token savings percentage
+llmproxy_tokens_saved_total / 
+  (llmproxy_tokens_saved_total + llmproxy_tokens_upstream_total) * 100
+
+# Cost efficiency (assuming $0.01 per 1K tokens)
+(llmproxy_tokens_saved_total / 1000) * 0.01
+```
+
+### Grafana Dashboard
+
+The pre-built dashboard provides:
+
+1. **Overview Row** - Key stats at a glance
+   - Total requests
+   - Cache hit rate
+   - Average latency
+   - Error count
+
+2. **Performance Row** - Time series graphs
+   - Request rate (req/sec)
+   - Latency trends
+   - Error rate
+
+3. **Efficiency Row** - Cost savings
+   - Token usage (upstream vs downstream)
+   - Tokens saved by filtering/compression
+   - Cache hit/miss trends
+
+**Import URL:** http://localhost:3002/d/llmproxy-metrics/llm-proxy-metrics
+
+### Setting Up Alerts (Grafana)
+
+Create alerts for critical conditions:
+
+```yaml
+# Example alert rules
+- alert: HighErrorRate
+  expr: rate(llmproxy_errors_total[5m]) / rate(llmproxy_requests_total[5m]) > 0.05
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Error rate above 5%"
+
+- alert: CacheHitRateLow
+  expr: llmproxy_cache_hit_rate < 0.10
+  for: 5m
+  labels:
+    severity: info
+  annotations:
+    summary: "Cache hit rate below 10%"
+
+- alert: HighLatency
+  expr: llmproxy_avg_latency_ms > 5000
+  for: 3m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Average latency above 5s"
+```
+
+### Troubleshooting Metrics
+
+**Prometheus can't scrape metrics:**
+```bash
+# Check if proxy is accessible
+curl http://localhost:8080/metrics/prometheus
+
+# Check Prometheus targets
+curl http://localhost:9091/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health}'
+```
+
+**No data in Grafana:**
+1. Check Prometheus data source: Configuration → Data Sources → Prometheus → Test
+2. Verify time range is appropriate (top right of dashboard)
+3. Check for network issues between Grafana and Prometheus
+
+**Dashboard not appearing:**
+```bash
+# Restart Grafana to reload provisioning
+docker compose -f docker-compose.monitoring.yml restart grafana
+
+# Check logs
+docker compose -f docker-compose.monitoring.yml logs grafana | grep -i "dashboard\|provision"
+```
 
 ---
 

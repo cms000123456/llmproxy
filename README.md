@@ -10,7 +10,7 @@ A lightweight, OpenAI-compatible proxy that sits between your application and a 
 - **Response Caching**: Caches identical requests in memory with TTL to avoid redundant paid API calls.
 - **🔐 API Key Authentication**: Secure your proxy with API key authentication. Supports Bearer tokens and X-API-Key headers.
 - **🛡️ PII Sanitization**: Automatically redacts sensitive data (credit cards, emails, API keys, SSNs) from requests and responses.
-- **📊 Metrics Endpoint**: Real-time visibility into requests, cache hit rate, tokens saved, and latency.
+- **📊 Metrics & Monitoring**: Prometheus metrics endpoint + Grafana dashboards for real-time visibility into requests, cache performance, tokens saved, and latency.
 - **🔄 Graceful Shutdown**: Handles SIGTERM/SIGINT properly, waits for inflight requests to complete.
 - **OpenAI-Compatible**: Drop-in replacement for the base URL—works with any client that speaks the OpenAI chat completions API.
 - **Coding Agent CLI**: A Kimi-Code/Claude-Code style terminal agent with filesystem tools (read, write, shell, grep, ls).
@@ -221,6 +221,62 @@ You can also benchmark live against a running proxy instance:
 ```bash
 python benchmark.py http://localhost:8080
 ```
+
+## Monitoring
+
+The proxy includes a built-in Prometheus metrics endpoint and an optional Grafana dashboard for real-time monitoring.
+
+### Quick Start (Docker)
+
+```bash
+# 1. Create the Docker network (if not exists)
+docker network create llmproxy-net
+
+# 2. Start the monitoring stack
+docker compose -f docker-compose.monitoring.yml up -d
+
+# 3. Access the dashboards
+open http://localhost:9091   # Prometheus
+open http://localhost:3002   # Grafana (admin/admin)
+```
+
+### Available Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `llmproxy_requests_total` | Total requests processed |
+| `llmproxy_cache_hits_total` | Cache hits |
+| `llmproxy_cache_misses_total` | Cache misses |
+| `llmproxy_cache_hit_rate` | Cache hit ratio (0-1) |
+| `llmproxy_tokens_upstream_total` | Tokens sent to upstream API |
+| `llmproxy_tokens_downstream_total` | Tokens received from upstream |
+| `llmproxy_tokens_saved_total` | Tokens saved by filtering/compression |
+| `llmproxy_errors_total` | Total errors |
+| `llmproxy_avg_latency_ms` | Average request latency |
+
+### Prometheus Query Examples
+
+```promql
+# Request rate over time
+rate(llmproxy_requests_total[5m])
+
+# Cache hit percentage
+llmproxy_cache_hit_rate * 100
+
+# Error rate
+rate(llmproxy_errors_total[5m]) / rate(llmproxy_requests_total[5m])
+```
+
+### Grafana Dashboard
+
+The pre-built dashboard includes:
+- **Request Statistics** - Total requests, request rate
+- **Cache Performance** - Hit rate, hits vs misses
+- **Token Efficiency** - Upstream/downstream tokens, tokens saved
+- **Error Tracking** - Error count and rate
+- **Latency** - Average response time
+
+Dashboard URL: http://localhost:3002/d/llmproxy-metrics/llm-proxy-metrics
 
 ## Configuration
 
