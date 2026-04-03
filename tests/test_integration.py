@@ -107,8 +107,8 @@ def test_metrics_integration():
     metrics = Metrics()
     
     # Simulate requests
-    metrics.record_request(upstream_tokens=100, downstream_tokens=50, latency_ms=200.0)
-    metrics.record_request(upstream_tokens=150, downstream_tokens=100, latency_ms=300.0, cached=True)
+    metrics.record_request(upstream_tokens=100, downstream_tokens=50, latency_ms=200.0, tokens_saved_filtering=50)
+    metrics.record_request(upstream_tokens=150, downstream_tokens=100, latency_ms=300.0, cached=True, tokens_saved_filtering=50)
     metrics.record_error()
     
     summary = metrics.summary()

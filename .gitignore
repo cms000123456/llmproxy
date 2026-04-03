@@ -41,3 +41,6 @@ audit/
 security-report*
 scan-results*
 conversations/
+-e 
+# Data files
+data/*.json
