@@ -2,7 +2,7 @@
 
 **Date:** 2025-01-15  
 **Test Runner:** Python 3.13  
-**Total Tests:** 212  
+**Total Tests:** 220  
 **Status:** ✅ ALL PASSED
 
 ---
@@ -23,9 +23,10 @@
 | test_server | 11 | ✅ Pass |
 | test_streaming | 17 | ✅ Pass |
 | test_storage | 12 | ✅ Pass |
+| test_prometheus | 8 | ✅ Pass |
 | test_integration | 7 | ✅ Pass |
 | test_agent_max_rounds | 4 | ✅ Pass |
-| **Total** | **212** | **✅ 100% Pass** |
+| **Total** | **220** | **✅ 100% Pass** |
 
 ---
 
@@ -311,7 +312,28 @@ Tests storage backends (memory and Redis).
 
 ---
 
-### 13. Integration Module (`test_integration.py`)
+### 13. Prometheus Module (`test_prometheus.py`)
+Tests Prometheus metrics export functionality.
+
+**Metrics Generation (4 tests):**
+- ✅ Prometheus format validation (HELP, TYPE, value lines)
+- ✅ All expected metrics present
+- ✅ Correct metric types (counter, gauge)
+- ✅ Metrics reflect actual data
+
+**Prometheus Endpoint (3 tests):**
+- ✅ Returns text/plain content type
+- ✅ Valid Prometheus metrics in response
+- ✅ Consistency with JSON metrics endpoint
+
+**Additional Tests:**
+- ✅ Info metric includes version label
+
+**Coverage:** 100% of Prometheus export functionality
+
+---
+
+### 14. Integration Module (`test_integration.py`)
 Tests end-to-end pipeline scenarios.
 
 - ✅ Full pipeline basic flow
@@ -326,7 +348,7 @@ Tests end-to-end pipeline scenarios.
 
 ---
 
-### 14. Agent Max Rounds Module (`test_agent_max_rounds.py`)
+### 15. Agent Max Rounds Module (`test_agent_max_rounds.py`)
 Tests max tool rounds handling.
 
 - ✅ Max rounds triggers final answer
@@ -398,6 +420,7 @@ Tests max tool rounds handling.
 | test_server | ~2s |
 | test_streaming | ~2s |
 | test_storage | ~2s |
+| test_prometheus | ~1s |
 | test_integration | ~3s |
 | test_agent_max_rounds | ~1s |
 | **Total** | **~28s** |
@@ -419,6 +442,7 @@ Tests max tool rounds handling.
 - [x] `llmproxy/storage/base.py` - 100%
 - [x] `llmproxy/storage/memory.py` - 100%
 - [x] `llmproxy/storage/redis.py` - 100%
+- [x] `llmproxy/metrics/prometheus.py` - 100%
 - [x] `llmproxy/server.py` - Core functionality covered
 - [x] `llmproxy/streaming.py` - 100%
 - [x] `llmproxy/ollama_client.py` - Not tested (requires external service)
