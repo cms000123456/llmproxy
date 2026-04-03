@@ -1,6 +1,7 @@
 """FastAPI server that proxies requests to an upstream LLM API with filtering, compression, and caching."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import random
@@ -17,13 +18,19 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
-from .cache import LRUCache
+from .storage import create_backend, MemoryBackend
 from .metrics import METRICS
 from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
 from .middleware.sanitize import SanitizationMiddleware
 from .auth import APIKeyAuthMiddleware, APIKeyManager
 
+
+# Cache key generation
+def _make_cache_key(payload: dict) -> str:
+    """Generate a deterministic cache key from request payload."""
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 # Setup logging
 logging.basicConfig(
@@ -326,7 +333,7 @@ async def _stream_upstream_response(
 
 # Shared state
 _http_client: httpx.AsyncClient | None = None
-_cache: LRUCache | None = None
+_cache = None
 
 
 def _handle_signal(sig, frame):
@@ -384,7 +391,22 @@ async def lifespan(app: FastAPI):
         headers=default_headers,
         timeout=httpx.Timeout(120.0, connect=10.0),
     )
-    _cache = LRUCache(max_size=settings.cache_max_size, ttl_seconds=settings.cache_ttl_seconds)
+    # Initialize storage backend
+    if settings.enable_cache:
+        try:
+            _cache = create_backend(
+                settings.cache_backend,
+                max_size=settings.cache_max_size,
+                ttl_seconds=settings.cache_ttl_seconds,
+                redis_url=settings.redis_url,
+                redis_key_prefix=settings.redis_key_prefix
+            )
+            logger.info(f"Cache backend: {settings.cache_backend}")
+        except Exception as e:
+            logger.error(f"Failed to initialize cache backend: {e}")
+            _cache = None
+    else:
+        _cache = None
     
     logger.info(f"Connected to upstream: {base_url}")
     logger.info(f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s")
@@ -540,7 +562,7 @@ async def proxy(request: Request, path: str):
     # Cache lookup
     cached = None
     if is_chat_completion and settings.enable_cache and _cache is not None:
-        cached = _cache.get(transformed_payload)
+        cached = _cache.get(_make_cache_key(transformed_payload))
 
     start = time.perf_counter()
 
@@ -597,7 +619,7 @@ async def proxy(request: Request, path: str):
 
     # Cache the response if it's a chat completion
     if is_chat_completion and settings.enable_cache and _cache is not None and response_data:
-        _cache.set(transformed_payload, response_data)
+        _cache.set(_make_cache_key(transformed_payload), response_data)
 
     # Record metrics
     downstream_tokens = 0

@@ -40,8 +40,13 @@ class Settings(BaseSettings):
 
     # Caching
     enable_cache: bool = True
+    cache_backend: str = "memory"  # "memory" or "redis"
     cache_ttl_seconds: int = 300
     cache_max_size: int = 1000
+
+    # Redis configuration (when cache_backend="redis")
+    redis_url: str = "redis://localhost:6379"
+    redis_key_prefix: str = "llmproxy:"
 
     # Retry configuration
     max_retries: int = 3  # Number of retries for upstream requests

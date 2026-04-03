@@ -53,13 +53,13 @@
   - **Time Estimate:** 1 day
 
 ### Storage & Cache
-- [ ] **TODO-007:** Create abstract storage backend interface
+- [x] ~~**TODO-007:**~~ Create abstract storage backend interface
   - **File:** `llmproxy/storage/base.py` (new)
   - **Implement:** MemoryBackend (current), RedisBackend
   - **Time Estimate:** 2 days
   - **Note:** Keep backward compatibility
 
-- [ ] **TODO-008:** Add Redis cache backend option
+- [x] ~~**TODO-008:**~~ Add Redis cache backend option
   - **File:** `llmproxy/storage/redis.py` (new)
   - **Config:** Add `cache_backend: str = "memory"`
   - **Time Estimate:** 1 day
