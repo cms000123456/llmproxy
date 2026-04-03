@@ -173,3 +173,96 @@ docker-compose -f docker-compose.monitoring.yml down -v
 | `alerts.yml` | Alerting rules definitions |
 | `grafana/provisioning/` | Grafana auto-provisioning configs |
 | `grafana/dashboards/` | Pre-built dashboard JSON |
+
+## Distributed Tracing with Jaeger
+
+The monitoring stack includes Jaeger for distributed tracing of requests through the LLM Proxy.
+
+### What is Distributed Tracing?
+
+Distributed tracing tracks a request as it flows through different components of a system, showing:
+- Timing of each operation
+- Dependencies between services
+- Performance bottlenecks
+- Error propagation
+
+### Starting Jaeger
+
+Jaeger is included in the monitoring stack:
+
+```bash
+docker-compose -f docker-compose.monitoring.yml up -d
+```
+
+### Accessing Jaeger UI
+
+Open http://localhost:16686 in your browser.
+
+### Enabling Tracing in LLM Proxy
+
+Set these environment variables:
+
+```bash
+# Enable tracing
+export LLM_PROXY_TRACING_ENABLED=true
+
+# Set Jaeger endpoint (use host IP if running proxy outside Docker)
+export LLM_PROXY_OTEL_EXPORTER_ENDPOINT=http://localhost:4318/v1/traces
+
+# Or if proxy is in Docker:
+export LLM_PROXY_OTEL_EXPORTER_ENDPOINT=http://jaeger:4318/v1/traces
+```
+
+### Traced Operations
+
+The LLM Proxy creates spans for these operations:
+
+| Span Name | Description | Attributes |
+|-----------|-------------|------------|
+| `filter_messages` | Message deduplication and cleanup | `message_count`, `filtered_count` |
+| `compress_messages` | Conversation compression | `strategy`, `original_tokens`, `compressed_tokens` |
+| `ab_test_selection` | A/B test variant selection | `variant`, `traffic_split` |
+| `cache_lookup` | Cache check operation | `cache_hit`, `cache_key` |
+| `upstream_request` | Upstream API call | `model`, `tokens_upstream`, `latency_ms` |
+
+### Using Jaeger UI
+
+1. **Search Traces**: Filter by service, operation, tags, or time range
+2. **Trace View**: See the full request flow with timing
+3. **Compare Traces**: Find performance differences between requests
+4. **Dependencies**: Visualize service dependencies
+
+### Example Trace
+
+A typical request trace looks like:
+
+```
+┌─ POST /v1/chat/completions ──────────────────────┐
+├─ filter_messages ..................... 2ms       │
+├─ compress_messages ................... 15ms      │
+│  └─ ollama_summarize ................. 12ms      │
+├─ cache_lookup ........................ 1ms       │
+├─ upstream_request .................... 1250ms    │
+│  └─ POST https://api.upstream.com/... 1248ms     │
+└─ Total ............................... 1268ms    │
+```
+
+### Troubleshooting Tracing
+
+**No traces appearing:**
+```bash
+# Check Jaeger is running
+curl http://localhost:16686/api/services
+
+# Check proxy can reach Jaeger
+telnet localhost 4318
+
+# Verify tracing is enabled
+curl http://localhost:8080/health  # Check logs for tracing status
+```
+
+**Traces incomplete:**
+- Ensure `LLM_PROXY_TRACING_ENABLED=true` is set
+- Check OTLP endpoint URL is correct
+- Verify network connectivity between proxy and Jaeger
+

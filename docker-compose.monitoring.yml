@@ -1,5 +1,5 @@
-# Docker Compose for Metrics Monitoring Stack
-# Prometheus + Grafana for LLM Proxy metrics
+# Docker Compose for Observability Stack
+# Prometheus + Grafana (metrics) + Jaeger (tracing)
 # 
 # Usage:
 #   docker-compose -f docker-compose.monitoring.yml up -d
@@ -7,6 +7,7 @@
 # Access:
 #   - Prometheus: http://localhost:9091
 #   - Grafana: http://localhost:3002 (admin/admin)
+#   - Jaeger UI: http://localhost:16686
 #   - LLM Proxy Metrics: http://localhost:8080/metrics/prometheus
 
 services:
@@ -49,6 +50,18 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: llmproxy-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4318:4318"    # OTLP HTTP receiver (for traces)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
 
 volumes:
   prometheus-data:

@@ -728,6 +728,93 @@ docker compose -f docker-compose.monitoring.yml logs grafana | grep -i "dashboar
 
 ---
 
+## Distributed Tracing
+
+The LLM Proxy supports OpenTelemetry distributed tracing via Jaeger, allowing you to visualize request flows and identify performance bottlenecks.
+
+### Architecture
+
+```
+Client Request
+      │
+      ▼
+┌─────────────┐
+│  LLM Proxy  │── filter_messages ──┐
+│             │── compress_messages │
+│             │── cache_lookup      ├── Jaeger Spans
+│             │── upstream_request ─┘
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Jaeger    │◀── Trace Collection
+│   :16686    │
+└─────────────┘
+```
+
+### Quick Start
+
+The monitoring stack includes Jaeger:
+
+```bash
+# Start observability stack (includes Jaeger)
+docker compose -f docker-compose.monitoring.yml up -d
+
+# Enable tracing in LLM Proxy
+export LLM_PROXY_TRACING_ENABLED=true
+export LLM_PROXY_OTEL_EXPORTER_ENDPOINT=http://localhost:4318/v1/traces
+
+# Restart proxy with tracing
+python main.py
+```
+
+### Access Jaeger UI
+
+Open http://localhost:16686 to view traces.
+
+### Traced Operations
+
+Each request generates spans for:
+
+| Operation | Description |
+|-----------|-------------|
+| `filter_messages` | Deduplication and cleanup |
+| `compress_messages` | Token reduction |
+| `cache_lookup` | Cache check |
+| `upstream_request` | API call to upstream LLM |
+
+### Viewing Traces
+
+1. Open Jaeger UI: http://localhost:16686
+2. Select `llmproxy` from the Service dropdown
+3. Click "Find Traces"
+4. Click on a trace to see the full request flow
+
+### Example Trace Timeline
+
+```
+├─ POST /v1/chat/completions ............... 0ms (start)
+├─ filter_messages ......................... 2ms
+├─ compress_messages ...................... 15ms
+├─ cache_lookup ............................ 1ms
+├─ upstream_request ..................... 1250ms
+└─ POST response .......................... 1268ms (end)
+```
+
+### Troubleshooting
+
+**No traces appearing:**
+```bash
+# Check Jaeger is running
+curl http://localhost:16686/api/services
+
+# Verify tracing is enabled
+grep LLM_PROXY_TRACING_ENABLED .env
+# Should show: LLM_PROXY_TRACING_ENABLED=true
+```
+
+---
+
 ## Development Stack
 
 For local development with full observability, use `docker-compose.dev.yml` which includes:
