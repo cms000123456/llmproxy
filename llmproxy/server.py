@@ -9,12 +9,71 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
 from .cache import LRUCache
 from .metrics import METRICS
 from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
+
+
+# Maximum request body size (10MB)
+MAX_BODY_SIZE = 10 * 1024 * 1024
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        return response
+
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """Limit request body size to prevent memory exhaustion."""
+    async def dispatch(self, request, call_next):
+        if request.method in ("POST", "PUT", "PATCH"):
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > MAX_BODY_SIZE:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "Request body too large (max 10MB)"}
+                )
+        return await call_next(request)
+
+
+# Simple in-memory rate limiter
+_rate_limit_store = {}
+RATE_LIMIT_REQUESTS = 100  # requests per window
+RATE_LIMIT_WINDOW = 60     # seconds
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple rate limiting per client IP."""
+    async def dispatch(self, request, call_next):
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        
+        # Clean old entries and check current window
+        window_start = now - RATE_LIMIT_WINDOW
+        _rate_limit_store[client_ip] = [
+            ts for ts in _rate_limit_store.get(client_ip, [])
+            if ts > window_start
+        ]
+        
+        if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_REQUESTS:
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limit exceeded. Try again later."}
+            )
+        
+        _rate_limit_store[client_ip].append(now)
+        return await call_next(request)
 
 
 def _kimi_code_headers() -> dict:
@@ -56,6 +115,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LLM Proxy", version="0.1.0", lifespan=lifespan)
+
+# Add security middleware
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 
 @app.get("/health")

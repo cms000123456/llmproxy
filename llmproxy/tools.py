@@ -14,9 +14,11 @@ console = Console()
 def _sanitize_path(path: str) -> str:
     """Prevent escaping the working directory."""
     base = os.path.abspath(os.getcwd())
-    target = os.path.abspath(os.path.join(base, path))
+    # Use realpath to resolve symlinks and prevent traversal attacks
+    target = os.path.realpath(os.path.join(base, path))
+    base_real = os.path.realpath(base)
     # Allow paths within the current working tree
-    if not target.startswith(base):
+    if not target.startswith(base_real):
         raise ValueError(f"Path {path} is outside the allowed workspace")
     return target
 
