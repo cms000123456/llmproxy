@@ -1,12 +1,17 @@
 """Agent loop for the coding CLI."""
 
+import json
 import os
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from openai import OpenAI
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.prompt import Prompt, IntPrompt
+from rich.table import Table
 
 from .tools import TOOL_DEFINITIONS, execute_tool
 
@@ -23,6 +28,123 @@ Guidelines:
 - Always summarize what you did in your final response.
 """
 
+# Store conversations outside the repo to avoid git contamination
+CONVERSATIONS_DIR = Path.home() / ".local" / "share" / "llmproxy" / "conversations"
+
+
+def _get_project_id() -> str:
+    """Generate a unique ID for the current project/workspace."""
+    cwd = os.getcwd()
+    # Use the directory name + full path hash for uniqueness
+    dir_name = os.path.basename(cwd)
+    path_hash = hash(cwd) & 0xFFFFFFFF
+    return f"{dir_name}_{path_hash:08x}"
+
+
+def _get_conversation_path(project_id: str, session_id: str) -> Path:
+    """Get the file path for a conversation."""
+    project_dir = CONVERSATIONS_DIR / project_id
+    project_dir.mkdir(parents=True, exist_ok=True)
+    return project_dir / f"{session_id}.json"
+
+
+def _list_sessions(project_id: str) -> list[dict]:
+    """List all saved sessions for a project."""
+    project_dir = CONVERSATIONS_DIR / project_id
+    if not project_dir.exists():
+        return []
+    
+    sessions = []
+    for file_path in sorted(project_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(file_path.read_text())
+            sessions.append({
+                "session_id": file_path.stem,
+                "created": data.get("created", "Unknown"),
+                "updated": data.get("updated", "Unknown"),
+                "preview": data.get("preview", "No preview"),
+                "message_count": len(data.get("messages", [])),
+            })
+        except Exception:
+            continue
+    return sessions
+
+
+def _save_session(project_id: str, session_id: str, messages: list, preview: str = ""):
+    """Save a conversation session to disk."""
+    conv_path = _get_conversation_path(project_id, session_id)
+    now = datetime.now().isoformat()
+    
+    data = {
+        "session_id": session_id,
+        "created": getattr(_save_session, f"created_{session_id}", now),
+        "updated": now,
+        "project_path": os.getcwd(),
+        "preview": preview[:200] if preview else "",
+        "messages": messages,
+    }
+    # Store creation time persistently
+    if not hasattr(_save_session, f"created_{session_id}"):
+        _save_session.__setattr__(f"created_{session_id}", data["created"])
+    
+    conv_path.write_text(json.dumps(data, indent=2))
+
+
+def _load_session(project_id: str, session_id: str) -> Optional[list[dict]]:
+    """Load a conversation session from disk."""
+    conv_path = _get_conversation_path(project_id, session_id)
+    if not conv_path.exists():
+        return None
+    
+    try:
+        data = json.loads(conv_path.read_text())
+        # Store creation time for future saves
+        _save_session.__setattr__(f"created_{session_id}", data.get("created", datetime.now().isoformat()))
+        return data.get("messages", [])
+    except Exception:
+        return None
+
+
+def _select_session(project_id: str) -> Optional[str]:
+    """Interactive session selector. Returns session_id or None for new session."""
+    sessions = _list_sessions(project_id)
+    
+    if not sessions:
+        return None
+    
+    console.print(Panel.fit(
+        "[bold cyan]Resume Previous Session?[/bold cyan]\n"
+        "Select a session to resume, or start a new one.",
+        title="Sessions"
+    ))
+    
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("#", style="cyan", justify="right")
+    table.add_column("Created", style="dim")
+    table.add_column("Updated", style="dim")
+    table.add_column("Messages", justify="right")
+    table.add_column("Preview", style="green")
+    
+    table.add_row("0", "—", "—", "—", "[dim]Start new session[/dim]")
+    
+    for i, session in enumerate(sessions[:10], 1):  # Show last 10
+        table.add_row(
+            str(i),
+            session["created"][:16].replace("T", " ") if session["created"] != "Unknown" else "—",
+            session["updated"][:16].replace("T", " ") if session["updated"] != "Unknown" else "—",
+            str(session["message_count"]),
+            session["preview"][:50] + "..." if len(session["preview"]) > 50 else session["preview"] or "[dim]No preview[/dim]",
+        )
+    
+    console.print(table)
+    
+    choice = IntPrompt.ask("Select session", default=0, show_default=True)
+    
+    if choice == 0 or choice > len(sessions):
+        return None
+    
+    return sessions[choice - 1]["session_id"]
+
 
 class Agent:
     def __init__(
@@ -30,17 +152,57 @@ class Agent:
         base_url: str = "http://localhost:8080/v1",
         api_key: Optional[str] = None,
         model: str = "kimi-for-coding",
+        session_id: Optional[str] = None,
+        resume: bool = False,
     ):
         self.client = OpenAI(
             base_url=base_url,
             api_key=api_key or "dummy",
         )
         self.model = model
-        self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.project_id = _get_project_id()
         self.max_tool_rounds = 30
-
+        
+        # Determine session ID
+        if session_id:
+            self.session_id = session_id
+        elif resume:
+            # Interactive selection
+            selected = _select_session(self.project_id)
+            self.session_id = selected if selected else self._generate_session_id()
+        else:
+            self.session_id = self._generate_session_id()
+        
+        # Load or initialize messages
+        loaded_messages = _load_session(self.project_id, self.session_id) if resume or session_id else None
+        if loaded_messages:
+            self.messages = loaded_messages
+            console.print(f"[dim]↳ Resumed session: {self.session_id[:16]}...[/dim]")
+        else:
+            self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    def _generate_session_id(self) -> str:
+        """Generate a new unique session ID."""
+        now = datetime.now()
+        return f"{now.strftime('%Y%m%d_%H%M%S')}_{os.urandom(4).hex()}"
+    
+    def _get_first_user_message(self) -> str:
+        """Get the first user message for preview."""
+        for msg in self.messages:
+            if msg.get("role") == "user":
+                return msg.get("content", "")[:100]
+        return ""
+    
+    def _save(self):
+        """Persist current conversation state."""
+        preview = self._get_first_user_message()
+        _save_session(self.project_id, self.session_id, self.messages, preview)
+    
     def chat(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})
+        
+        # Save after adding user message
+        self._save()
 
         for _ in range(self.max_tool_rounds):
             response = self.client.chat.completions.create(
@@ -54,6 +216,9 @@ class Agent:
 
             # Append the assistant message (content may be None)
             self.messages.append(assistant_msg.model_dump())
+            
+            # Save after assistant response
+            self._save()
 
             tool_calls = assistant_msg.tool_calls
             if not tool_calls or choice.finish_reason != "tool_calls":
@@ -62,7 +227,6 @@ class Agent:
             # Execute tools and append results
             for tc in tool_calls:
                 name = tc.function.name
-                import json
                 args = json.loads(tc.function.arguments)
                 console.print(f"[dim]→ Tool call: {name}({json.dumps(args)})[/dim]")
                 result = execute_tool(name, args)
@@ -73,5 +237,7 @@ class Agent:
                     "tool_call_id": tool_call_id,
                     "content": result,
                 })
+                # Save after tool results
+                self._save()
 
         return "(reached max tool rounds without final answer)"

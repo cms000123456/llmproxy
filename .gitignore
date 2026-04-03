@@ -31,3 +31,14 @@ deploy_key
 deploy_key.pub
 *.pem
 *.key
+
+# Audit reports and security scans
+reports/
+audit/
+*audit*.txt
+*audit*.md
+*audit*.json
+*audit*.xml
+security-report*
+scan-results*
+conversations/

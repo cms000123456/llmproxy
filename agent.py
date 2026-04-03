@@ -10,7 +10,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from llmproxy.cli_agent import Agent
+from llmproxy.cli_agent import Agent, _list_sessions, _get_project_id
 
 app = typer.Typer(help="Coding agent CLI — interacts with your filesystem via LLM tools.")
 console = Console()
@@ -40,9 +40,62 @@ def run(
         "-m",
         help="Model ID to use",
     ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        "-r",
+        help="Resume a previous session (interactive selection)",
+    ),
+    session_id: str = typer.Option(
+        "",
+        "--session-id",
+        "-s",
+        help="Resume a specific session by ID",
+    ),
+    list_sessions: bool = typer.Option(
+        False,
+        "--list",
+        "-l",
+        help="List saved sessions for this project",
+    ),
     prompt: str = typer.Argument("", help="Single prompt to run non-interactively"),
 ):
-    agent = Agent(base_url=base_url, api_key=api_key, model=model)
+    # Handle list sessions
+    if list_sessions:
+        project_id = _get_project_id()
+        sessions = _list_sessions(project_id)
+        if not sessions:
+            console.print("[dim]No saved sessions for this project.[/dim]")
+            return
+        
+        from rich.table import Table
+        table = Table(title=f"Saved Sessions for {os.getcwd()}")
+        table.add_column("Session ID", style="cyan")
+        table.add_column("Created", style="dim")
+        table.add_column("Updated", style="dim")
+        table.add_column("Messages", justify="right")
+        table.add_column("Preview", style="green")
+        
+        for session in sessions:
+            table.add_row(
+                session["session_id"],
+                session["created"][:16].replace("T", " ") if session["created"] != "Unknown" else "—",
+                session["updated"][:16].replace("T", " ") if session["updated"] != "Unknown" else "—",
+                str(session["message_count"]),
+                session["preview"][:40] + "..." if len(session["preview"]) > 40 else session["preview"] or "[dim]—[/dim]",
+            )
+        
+        console.print(table)
+        return
+    
+    # Create agent with session management
+    agent = Agent(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        session_id=session_id if session_id else None,
+        resume=resume,
+    )
 
     if prompt:
         reply = agent.chat(prompt)
@@ -54,6 +107,7 @@ def run(
         f"Model: {model}\n"
         f"Base URL: {base_url}\n"
         f"Workspace: {os.getcwd()}\n"
+        f"Session: {agent.session_id[:24]}...\n"
         f"Type [bold]'exit'[/bold] or [bold]'quit'[/bold] to leave.",
         title="Welcome",
     ))
@@ -62,12 +116,12 @@ def run(
         try:
             user_input = Prompt.ask("[bold cyan]You[/bold cyan]")
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[dim]Goodbye.[/dim]")
+            console.print("\n[dim]Session saved. Goodbye.[/dim]")
             break
 
         user_input = user_input.strip()
         if user_input.lower() in ("exit", "quit"):
-            console.print("[dim]Goodbye.[/dim]")
+            console.print("[dim]Session saved. Goodbye.[/dim]")
             break
         if not user_input:
             continue
