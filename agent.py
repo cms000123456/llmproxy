@@ -94,6 +94,12 @@ def run(
         "--confirm/--no-confirm",
         help="Ask for confirmation before executing tasks",
     ),
+    max_tool_rounds: int = typer.Option(
+        int(_get_env("LLM_AGENT_MAX_TOOL_ROUNDS", "10")),
+        "--max-tool-rounds",
+        "-t",
+        help="Maximum number of tool call rounds per request (env: LLM_AGENT_MAX_TOOL_ROUNDS)",
+    ),
     prompt: str = typer.Argument("", help="Single prompt to run non-interactively"),
 ):
     # Handle list sessions
@@ -135,6 +141,7 @@ def run(
         model=model,
         session_id=session_id if session_id else None,
         resume=resume,
+        max_tool_rounds=max_tool_rounds,
     )
 
     if prompt:
