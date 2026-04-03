@@ -20,6 +20,7 @@ from .metrics import METRICS
 from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
 from .middleware.sanitize import SanitizationMiddleware
+from .auth import APIKeyAuthMiddleware, APIKeyManager
 
 
 # Setup logging
@@ -144,7 +145,7 @@ async def _wait_for_inflight_requests(timeout: float = GRACEFUL_SHUTDOWN_TIMEOUT
     
     async with _inflight_lock:
         if _inflight_requests > 0:
-            logger.warning(f"Timeout reached, {inflight_requests} requests still inflight")
+            logger.warning(f"Timeout reached, {_inflight_requests} requests still inflight")
     return False
 
 
@@ -209,9 +210,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LLM Proxy", version="0.1.0", lifespan=lifespan)
 
-# Add middleware (order matters - sanitize before other processing)
+# Add middleware (order matters - first added runs first, last runs closest to handler)
+# Order: SecurityHeaders -> BodySizeLimit -> Auth -> RateLimit -> Sanitize -> Inflight
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(APIKeyAuthMiddleware, enabled=settings.auth_enabled)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SanitizationMiddleware, enabled=True)
 app.add_middleware(InflightRequestMiddleware)
@@ -239,7 +242,19 @@ async def proxy(request: Request, path: str):
     headers.pop("content-length", None)
 
     # Authorization override: use proxy config if no client key provided, else forward client key
-    if not headers.get("authorization") and settings.upstream_api_key:
+    # Note: We check if authorization header contains one of our api_keys
+    auth_header = headers.get("authorization", "")
+    api_keys_set = set(settings.api_keys)
+    
+    if auth_header.startswith("Bearer "):
+        provided_key = auth_header[7:].strip()
+        if provided_key in api_keys_set:
+            # This is our auth key, replace with upstream key
+            if settings.upstream_api_key:
+                headers["authorization"] = f"Bearer {settings.upstream_api_key}"
+        # else: forward client's key to upstream
+    elif settings.upstream_api_key:
+        # No auth header, use upstream key
         headers["authorization"] = f"Bearer {settings.upstream_api_key}"
 
     # Kimi Code compatibility: inject agent headers and strip client fingerprints

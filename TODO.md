@@ -8,7 +8,7 @@
 ## 🔴 HIGH PRIORITY (Do First)
 
 ### Security
-- [ ] **TODO-001:** Add API key authentication middleware
+- [x] ~~**TODO-001:**~~ Add API key authentication middleware
   - **File:** `llmproxy/auth.py` (new)
   - **Config:** Add `api_keys: list[str]` to Settings
   - **Tests:** Add auth tests to `tests/test_server.py`
@@ -121,6 +121,7 @@
 - [x] ~~Create comprehensive test suite (95 tests)~~
 - [x] ~~Add security middleware (rate limiting, body size, headers)~~
 - [x] ~~Fix path traversal vulnerability~~
+- [x] ~~Add API key authentication middleware (TODO-001)~~
 - [x] ~~Add request/response sanitization for PII (TODO-002)~~
 - [x] ~~Add graceful shutdown handling (TODO-004)~~
 - [x] ~~Verify secrets not in git~~
@@ -130,10 +131,10 @@
 ## 📊 Progress Tracking
 
 ```
-HIGH:     2/4  complete  ████████░░  50%
+HIGH:     3/4  complete  ███████░░░  75%
 MEDIUM:   0/7  pending   ░░░░░░░░░░  0%
 LOW:      0/6  pending   ░░░░░░░░░░  0%
-TOTAL:    2/17 complete  ██░░░░░░░░  12%
+TOTAL:    3/17 complete  ███░░░░░░░  18%
 ```
 
 ---

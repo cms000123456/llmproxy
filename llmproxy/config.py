@@ -1,7 +1,7 @@
 """Configuration for LLM Proxy."""
 
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     # Proxy server
     host: str = "0.0.0.0"
     port: int = 8080
+
+    # Authentication
+    api_keys: List[str] = []  # List of valid API keys for client authentication
+    auth_enabled: bool = True  # Enable/disable API key authentication
 
     # Filtering
     enable_filtering: bool = True
