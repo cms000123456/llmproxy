@@ -33,7 +33,6 @@ deploy_key.pub
 *.key
 
 # Audit reports and security scans
-reports/
 audit/
 *audit*.txt
 *audit*.md
