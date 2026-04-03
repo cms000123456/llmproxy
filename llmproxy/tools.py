@@ -1,11 +1,14 @@
 """Tool implementations for the coding agent CLI."""
 
+import asyncio
+import fnmatch
 import json
 import os
 import subprocess
 import time
 from typing import Any, Optional
 
+import aiofiles
 from rich.console import Console
 
 console = Console()
@@ -23,15 +26,19 @@ def _sanitize_path(path: str) -> str:
     return target
 
 
-def read_file(path: str, offset: int = 1, limit: int = 100) -> str:
+async def read_file(path: str, offset: int = 1, limit: int = 100) -> str:
+    """Read the contents of a file asynchronously. Returns the specified range of lines."""
     try:
         target = _sanitize_path(path)
+        # Use sync os.path.exists/isdir since these are fast checks
         if not os.path.exists(target):
             return f"Error: file not found: {path}"
         if os.path.isdir(target):
             return f"Error: {path} is a directory"
-        with open(target, "r", encoding="utf-8", errors="ignore") as f:
-            lines = f.readlines()
+        
+        async with aiofiles.open(target, "r", encoding="utf-8", errors="ignore") as f:
+            lines = await f.readlines()
+        
         start = max(0, offset - 1)
         end = min(len(lines), start + limit)
         selected = lines[start:end]
@@ -41,19 +48,24 @@ def read_file(path: str, offset: int = 1, limit: int = 100) -> str:
         return f"Error reading {path}: {exc}"
 
 
-def write_file(path: str, content: str, mode: str = "overwrite") -> str:
+async def write_file(path: str, content: str, mode: str = "overwrite") -> str:
+    """Write or append text to a file asynchronously. Creates parent directories if needed."""
     try:
         target = _sanitize_path(path)
+        # Create directories synchronously (fast operation)
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
         file_mode = "a" if mode == "append" else "w"
-        with open(target, file_mode, encoding="utf-8") as f:
-            f.write(content)
+        
+        async with aiofiles.open(target, file_mode, encoding="utf-8") as f:
+            await f.write(content)
+        
         return f"Success: wrote to {path} ({mode})"
     except Exception as exc:
         return f"Error writing {path}: {exc}"
 
 
 def shell(command: str, timeout: int = 30) -> str:
+    """Execute a shell command in the current working directory."""
     try:
         result = subprocess.run(
             command,
@@ -81,10 +93,12 @@ def shell(command: str, timeout: int = 30) -> str:
 
 
 def list_directory(path: str = ".") -> str:
+    """List files and subdirectories in a given path."""
     try:
         target = _sanitize_path(path)
         if not os.path.isdir(target):
             return f"Error: {path} is not a directory"
+        
         entries = os.listdir(target)
         lines = [f"Directory: {path}"]
         for e in sorted(entries):
@@ -97,11 +111,13 @@ def list_directory(path: str = ".") -> str:
         return f"Error listing {path}: {exc}"
 
 
-def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str:
+async def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str:
+    """Search for a text pattern in files under a path asynchronously."""
     try:
-        import fnmatch
         target = _sanitize_path(path)
         matches = []
+        
+        # Build file list synchronously (directory traversal)
         if os.path.isfile(target):
             files = [target]
         else:
@@ -111,10 +127,12 @@ def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str:
                     if glob and not fnmatch.fnmatch(name, glob):
                         continue
                     files.append(os.path.join(root, name))
+        
+        # Read files asynchronously
         for fp in files[:50]:  # limit scanned files
             try:
-                with open(fp, "r", encoding="utf-8", errors="ignore") as f:
-                    for i, line in enumerate(f, 1):
+                async with aiofiles.open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                    for i, line in enumerate(await f.readlines(), 1):
                         if pattern in line:
                             rel = os.path.relpath(fp, os.getcwd())
                             matches.append(f"{rel}:{i}: {line.rstrip()}")
@@ -124,6 +142,7 @@ def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str:
                 continue
             if len(matches) >= 100:
                 break
+        
         if not matches:
             return f"No matches for '{pattern}'"
         return "\n".join(matches[:100])
@@ -131,6 +150,7 @@ def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str:
         return f"Error searching: {exc}"
 
 
+# Tool definitions for OpenAI API
 TOOL_DEFINITIONS = [
     {
         "type": "function",
@@ -212,6 +232,8 @@ TOOL_DEFINITIONS = [
 ]
 
 
+# Map of tool names to functions
+# Note: Some functions are async and need to be awaited in execute_tool
 TOOL_MAP = {
     "read_file": read_file,
     "write_file": write_file,
@@ -221,11 +243,25 @@ TOOL_MAP = {
 }
 
 
-def execute_tool(name: str, arguments: dict) -> str:
+# Set of async tool functions (need to be awaited)
+ASYNC_TOOLS = {"read_file", "write_file", "grep"}
+
+
+async def execute_tool(name: str, arguments: dict) -> str:
+    """Execute a tool by name with the given arguments.
+    
+    Handles both sync and async tool functions.
+    """
     func = TOOL_MAP.get(name)
     if not func:
         return f"Error: unknown tool {name}"
+    
     try:
-        return func(**arguments)
+        if name in ASYNC_TOOLS:
+            # Async function - await it
+            return await func(**arguments)
+        else:
+            # Sync function - call directly
+            return func(**arguments)
     except Exception as exc:
         return f"Error executing {name}: {exc}"

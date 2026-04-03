@@ -47,7 +47,7 @@
   - **Time Estimate:** 2-3 days
   - **Depends on:** TODO-004 (graceful shutdown for stream cleanup)
 
-- [ ] **TODO-006:** Convert file I/O to async (aiofiles)
+- [x] ~~**TODO-006:**~~ Convert file I/O to async (aiofiles)
   - **File:** `llmproxy/tools.py`
   - **Functions:** `read_file()`, `write_file()`, `grep()`
   - **Time Estimate:** 1 day
