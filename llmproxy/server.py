@@ -477,6 +477,90 @@ async def costs_endpoint():
     return {"summary": summary, "details": details}
 
 
+@app.get("/templates")
+async def list_templates_endpoint():
+    """List all available prompt templates."""
+    from .templates import get_template_engine
+    engine = get_template_engine()
+    return {"templates": engine.list_templates()}
+
+
+@app.post("/templates/render")
+async def render_template_endpoint(request: Request):
+    """Render a prompt template with variables.
+    
+    Request body:
+    {
+        "template": "code_review",
+        "variables": {
+            "language": "python",
+            "code": "def hello(): pass"
+        }
+    }
+    """
+    from .templates import get_template_engine
+    body = await request.json()
+    
+    template_name = body.get("template")
+    variables = body.get("variables", {})
+    
+    if not template_name:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Missing required field: template"}
+        )
+    
+    try:
+        engine = get_template_engine()
+        result = engine.render(template_name, variables)
+        return result
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)}
+        )
+
+
+@app.post("/templates/validate")
+async def validate_template_endpoint(request: Request):
+    """Validate template variables.
+    
+    Request body:
+    {
+        "template": "code_review",
+        "variables": {
+            "language": "python"
+        }
+    }
+    
+    Returns missing required variables (those without defaults).
+    """
+    from .templates import get_template_engine
+    body = await request.json()
+    
+    template_name = body.get("template")
+    variables = body.get("variables", {})
+    
+    if not template_name:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Missing required field: template"}
+        )
+    
+    try:
+        engine = get_template_engine()
+        missing = engine.validate_variables(template_name, variables)
+        return {
+            "valid": len(missing) == 0,
+            "missing_variables": missing
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)}
+        )
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy(request: Request, path: str):
     global _http_client, _cache
