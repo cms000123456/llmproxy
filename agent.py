@@ -4,6 +4,7 @@
 import os
 import sys
 
+import openai
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
@@ -145,10 +146,14 @@ def run(
     )
 
     if prompt:
-        reply = agent.chat(prompt)
-        console.print(Markdown(reply))
-        console.print(agent.get_usage_summary())
-        console.print(agent.get_proxy_savings())
+        try:
+            reply = agent.chat(prompt)
+            console.print(Markdown(reply))
+            console.print(agent.get_usage_summary())
+            console.print(agent.get_proxy_savings())
+        except openai.APIError as e:
+            console.print(f"[dim red]API Error ({e.__class__.__name__}): {e}[/dim red]")
+            raise SystemExit(1)
         return
 
     # Use a mutable list to allow toggling confirmation during session
@@ -299,6 +304,8 @@ def run(
             console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
             console.print(agent.get_usage_summary())
             console.print(agent.get_proxy_savings())
+        except openai.APIError as e:
+            console.print(f"\n[dim red]API Error ({e.__class__.__name__}): {e}[/dim red]")
         except KeyboardInterrupt:
             console.print("\n[dim yellow]⏹ Chat interrupted.[/dim yellow]")
             # Add a placeholder message so the conversation context is preserved
