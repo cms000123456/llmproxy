@@ -294,17 +294,33 @@ class Agent:
             {"role": "user", "content": user_input}
         ]
         
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=temp_messages,
-            temperature=0.3,
-            max_tokens=200,  # Keep it brief
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=temp_messages,
+                temperature=0.3,
+                max_tokens=200,  # Keep it brief
+            )
+            
+            # Track usage for understanding request
+            self._update_usage(response)
+            
+            content = response.choices[0].message.content
+            if content and content.strip() and content.strip().lower() not in (
+                "i'll help you with that.",
+                "i'll help you with that",
+                "i can help you with that.",
+                "i can help you with that",
+            ):
+                return content.strip()
+        except Exception:
+            pass
         
-        # Track usage for understanding request
-        self._update_usage(response)
-        
-        return response.choices[0].message.content or "I'll help you with that."
+        # Fallback: show the actual user request (truncated if too long)
+        user_input = user_input.strip()
+        if len(user_input) > 200:
+            user_input = user_input[:200] + "..."
+        return f"**You asked:** {user_input}"
     
     def chat(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})

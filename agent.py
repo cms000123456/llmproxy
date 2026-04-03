@@ -26,6 +26,8 @@ SLASH_COMMANDS = [
     ("/help", "Show available commands"),
     ("/usage", "Show token usage"),
     ("/savings", "Show proxy savings"),
+    ("/confirm", "Enable confirmation before tasks"),
+    ("/noconfirm", "Disable confirmation (auto-execute)"),
 ]
 
 
@@ -142,14 +144,18 @@ def run(
         console.print(agent.get_proxy_savings())
         return
 
+    # Use a mutable list to allow toggling confirmation during session
+    confirm_state = [confirm]
+    
+    def get_confirm_status():
+        return "[dim green]✓[/dim green] Confirm ON" if confirm_state[0] else "[dim yellow]⚡[/dim yellow] Confirm OFF"
+
     # Show welcome panel with usage info
     usage_str = agent.get_usage_summary()
     savings_str = agent.get_proxy_savings()
     
     # Format session ID more nicely
     session_short = agent.session_id[:20]
-    
-    confirm_status = "[dim green]✓[/dim green] Confirm tasks" if confirm else "[dim yellow]⚡[/dim yellow] Auto-execute"
     
     console.print(Panel.fit(
         f"[bold green]Coding Agent[/bold green]\n"
@@ -158,7 +164,7 @@ def run(
         f"[dim]Session:[/dim] {session_short}...\n"
         f"{usage_str}\n"
         f"{savings_str}\n"
-        f"{confirm_status}\n"
+        f"{get_confirm_status()}\n"
         f"[dim]Commands:[/dim] Type [bold]'/help'[/bold] for available commands",
         title="Welcome",
     ))
@@ -174,7 +180,7 @@ def run(
     # Ctrl-C is not bound - it will cancel input naturally (raise KeyboardInterrupt)
     
     # Show available commands hint on startup
-    commands_hint = " | ".join([f"[cyan]{cmd}[/cyan]" for cmd, _ in SLASH_COMMANDS[:3]]) + " | [dim]...[/dim]"
+    commands_hint = " | ".join([f"[cyan]{cmd}[/cyan]" for cmd, _ in SLASH_COMMANDS[:4]]) + " | [dim]...[/dim]"
     console.print(f"[dim]Commands: {commands_hint} Type / for suggestions[/dim]")
     console.print()
     
@@ -207,8 +213,9 @@ def run(
                 "  [cyan]/savings[/cyan]         - Show proxy savings (filtering/caching)\n"
                 "  [cyan]/help[/cyan]            - Show this help message\n\n"
                 "[bold]Confirmation Mode:[/bold]\n"
-                "  The agent asks for confirmation before executing tasks.\n"
-                "  Disable with: [cyan]./llmproxy.sh agent --no-confirm[/cyan]\n\n"
+                f"  Current: {get_confirm_status()}\n"
+                "  [cyan]/confirm[/cyan]        - Enable confirmation before tasks\n"
+                "  [cyan]/noconfirm[/cyan]      - Disable confirmation (auto-execute)\n\n"
                 "[bold]Keyboard Shortcuts:[/bold]\n"
                 "  [cyan]Ctrl+C[/cyan]            - Interrupt current chat\n"
                 "  [cyan]Ctrl+D[/cyan]            - Exit agent\n\n"
@@ -233,6 +240,14 @@ def run(
         elif user_input.lower() == "/savings":
             console.print(agent.get_proxy_savings())
             continue
+        elif user_input.lower() == "/confirm":
+            confirm_state[0] = True
+            console.print(f"[dim green]✓[/dim green] Confirmation enabled. The agent will ask before executing tasks.")
+            continue
+        elif user_input.lower() == "/noconfirm":
+            confirm_state[0] = False
+            console.print(f"[dim yellow]⚡[/dim yellow] Confirmation disabled. The agent will auto-execute tasks.")
+            continue
         elif not user_input:
             continue
         elif user_input.startswith("/"):
@@ -240,7 +255,7 @@ def run(
             continue
 
         # Confirmation flow: agent states its understanding first
-        if confirm:
+        if confirm_state[0]:
             try:
                 with console.status("[bold blue]Understanding your request...[/bold blue]"):
                     understanding = agent.get_understanding(user_input)
