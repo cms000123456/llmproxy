@@ -73,10 +73,11 @@
   - **Depends on:** TODO-001 (authentication)
 
 ### Observability
-- [ ] **TODO-010:** Add structured logging with structlog
-  - **File:** Replace print/logging with structlog
-  - **Config:** Add `log_format: str = "json"`
+- [x] ~~**TODO-010:**~~ Add structured logging with structlog
+  - **File:** `llmproxy/logging_config.py` (new)
+  - **Config:** Add `log_format: str = "console"` (console or json)
   - **Time Estimate:** 4 hours
+  - **Note:** Completed 2025-01-15
 
 - [ ] **TODO-011:** Add Prometheus metrics endpoint
   - **File:** `llmproxy/metrics/prometheus.py` (new)
@@ -104,3 +105,22 @@
   - **Time Estimate:** 1-2 days
 
 ### Developer Experience
+- [ ] **TODO-015:** Add request/response examples to documentation
+  - **File:** Update `HOWTO.md`
+  - **Time Estimate:** 2 hours
+
+- [ ] **TODO-016:** Create docker-compose for local development
+  - **File:** `docker-compose.dev.yml`
+  - **Features:** Redis, Jaeger, Prometheus stack
+  - **Time Estimate:** 2 hours
+
+---
+
+## ✅ Recently Completed
+
+| TODO | Description | Date Completed |
+|------|-------------|----------------|
+| TODO-010 | Structured logging with structlog | 2025-01-15 |
+| TODO-009 | Per-API-key cost tracking | 2025-01-15 |
+| TODO-005 | Streaming response support | 2025-01-14 |
+| TODO-004 | Graceful shutdown handling | 2025-01-14 |
