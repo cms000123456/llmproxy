@@ -53,6 +53,7 @@ select = [
 ]
 ignore = [
     "E501",  # Line too long (handled by formatter)
+    "E402",  # Import not at top (we use __future__ annotations before docstrings)
     "SIM115", # Use context handler for file operations (too strict for tests)
 ]
 
