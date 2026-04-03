@@ -1,0 +1,18 @@
+# Docker Compose for Dashboard only
+# Serves the React dashboard at http://localhost:3000
+
+services:
+  dashboard:
+    image: nginx:alpine
+    container_name: llmproxy-dashboard
+    ports:
+      - "3000:80"
+    volumes:
+      - ./dashboard/public:/usr/share/nginx/html:ro
+    networks:
+      - llmproxy-dev-net
+    restart: unless-stopped
+
+networks:
+  llmproxy-dev-net:
+    external: true
