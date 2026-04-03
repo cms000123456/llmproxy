@@ -1,0 +1,154 @@
+# Prometheus Alerting Rules for LLM Proxy
+# 
+# These rules define when alerts should fire based on metrics
+# from the LLM Proxy. Alerts are sent to Alertmanager (if configured)
+# or can be viewed in the Prometheus UI.
+
+groups:
+  - name: llmproxy-critical
+    interval: 30s
+    rules:
+      # Critical: Service is down or not responding
+      - alert: LLMProxyDown
+        expr: up{job="llmproxy"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM Proxy is down"
+          description: "The LLM Proxy has been down for more than 1 minute."
+          runbook_url: "https://github.com/cms000123456/llmproxy/blob/main/monitoring/README.md#troubleshooting"
+
+      # Critical: High error rate (>5% errors in 5m window)
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(llmproxy_errors_total[5m]) 
+            / 
+            rate(llmproxy_requests_total[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+          value: "{{ $value }}"
+
+      # Critical: Very high latency (>10s average)
+      - alert: HighLatency
+        expr: llmproxy_avg_latency_ms > 10000
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High latency detected"
+          description: "Average latency is {{ $value }}ms over the last 3 minutes."
+          value: "{{ $value }}"
+
+  - name: llmproxy-warning
+    interval: 30s
+    rules:
+      # Warning: Moderate error rate (>1% errors)
+      - alert: ModerateErrorRate
+        expr: |
+          (
+            rate(llmproxy_errors_total[5m]) 
+            / 
+            rate(llmproxy_requests_total[5m])
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Moderate error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+          value: "{{ $value }}"
+
+      # Warning: High latency (>5s average)
+      - alert: ModerateLatency
+        expr: llmproxy_avg_latency_ms > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Moderate latency detected"
+          description: "Average latency is {{ $value }}ms over the last 5 minutes."
+          value: "{{ $value }}"
+
+      # Warning: Low cache hit rate (<10%)
+      - alert: LowCacheHitRate
+        expr: llmproxy_cache_hit_rate < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate has dropped to {{ $value | humanizePercentage }} over the last 10 minutes."
+          value: "{{ $value }}"
+          suggestion: "Consider reviewing cache TTL or increasing cache size."
+
+      # Warning: No cache hits (possible cache issue)
+      - alert: NoCacheHits
+        expr: rate(llmproxy_cache_hits_total[10m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No cache hits detected"
+          description: "No cache hits have been recorded in the last 15 minutes despite traffic."
+          suggestion: "Check if caching is enabled or if cache is being bypassed."
+
+  - name: llmproxy-info
+    interval: 1m
+    rules:
+      # Info: Unusual traffic spike (>3x normal rate)
+      - alert: TrafficSpike
+        expr: |
+          (
+            rate(llmproxy_requests_total[5m]) 
+            > 
+            3 * avg_over_time(rate(llmproxy_requests_total[1h])[1h:5m])
+          )
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Traffic spike detected"
+          description: "Request rate is {{ $value | humanize }} req/s, 3x above normal."
+          value: "{{ $value }}"
+
+      # Info: High token savings (>80% saved)
+      - alert: HighTokenSavings
+        expr: |
+          (
+            llmproxy_tokens_saved_total 
+            / 
+            (llmproxy_tokens_saved_total + llmproxy_tokens_upstream_total)
+          ) > 0.80
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "High token savings"
+          description: "Proxy is saving {{ $value | humanizePercentage }} of tokens through filtering/compression."
+          value: "{{ $value }}"
+
+  - name: llmproxy-cost
+    interval: 5m
+    rules:
+      # Warning: Estimated cost threshold (adjust threshold as needed)
+      - alert: EstimatedCostThreshold
+        expr: |
+          (
+            llmproxy_tokens_upstream_total 
+            / 1000 * 0.01  # Assuming $0.01 per 1K tokens
+          ) > 100
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "High estimated cost"
+          description: "Estimated cost has exceeded $100 in the current session."
+          value: "${{ $value }}"
+          suggestion: "Review usage patterns and consider increasing compression/filtering."
