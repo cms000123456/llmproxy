@@ -110,10 +110,13 @@
   - **Time Estimate:** 1 day
   - **Note:** Implemented 2025-01-15 - requires testing
 
-- [ ] **TODO-014:** Add distributed tracing (OpenTelemetry)
+- [x] ~~**TODO-014:**~~ Add distributed tracing (OpenTelemetry)
   - **File:** `llmproxy/tracing.py` (new)
-  - **Features:** Jaeger/Zipkin integration
+  - **Features:** OpenTelemetry SDK, OTLP exporter, Jaeger integration
+  - **Config:** `tracing_enabled`, `otel_exporter_endpoint`
+  - **Tests:** `tests/test_tracing.py` - 9 tests
   - **Time Estimate:** 1-2 days
+  - **Note:** Completed 2025-04-03
 
 ### Developer Experience
 - [x] ~~**TODO-015:**~~ Add development stack documentation
@@ -154,6 +157,7 @@
 
 | TODO | Description | Date Completed |
 |------|-------------|----------------|
+| TODO-014 | Distributed tracing with OpenTelemetry (Jaeger integration) | 2025-04-03 |
 | TODO-017 | Linting with Ruff (1000+ issues fixed, full codebase reformatted) | 2025-04-03 |
 | TODO-016 | Docker-compose dev stack (Redis, Jaeger, Prometheus, Grafana) | 2025-01-15 |
 | TODO-015 | Development stack documentation in HOWTO.md | 2025-01-15 |

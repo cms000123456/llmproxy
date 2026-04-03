@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # Prompt templates configuration
     prompt_templates: Dict[str, Dict[str, Any]] = {}  # Custom templates to register
 
+    # Distributed tracing configuration
+    tracing_enabled: bool = False  # Enable OpenTelemetry tracing
+    otel_exporter_endpoint: str = "http://localhost:4318/v1/traces"  # OTLP HTTP endpoint
+
     class Config:
         env_prefix = "LLM_PROXY_"
         env_file = ".env"

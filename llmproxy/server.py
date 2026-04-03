@@ -28,8 +28,7 @@ from .logging_config import configure_logging, get_logger
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
 from .middleware.sanitize import SanitizationMiddleware
-from .storage import create_backend
-
+from .tracing import setup_tracing, get_tracer, trace_operation
 
 # Cache key generation
 def _make_cache_key(payload: dict) -> str:
@@ -349,6 +348,9 @@ _http_client: httpx.AsyncClient | None = None
 _experimental_http_client: httpx.AsyncClient | None = None
 _cache = None
 
+# Tracing
+_tracer = None
+
 # A/B testing variant storage (for sticky sessions)
 _ab_test_variants: dict[str, str] = {}
 
@@ -418,7 +420,7 @@ async def _wait_for_inflight_requests(timeout: float = GRACEFUL_SHUTDOWN_TIMEOUT
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _http_client, _cache
+    global _http_client, _cache, _tracer
 
     # Setup signal handlers for graceful shutdown
     if sys.platform != "win32":
@@ -475,6 +477,16 @@ async def lifespan(app: FastAPI):
 
     # Initialize template engine
     templates.init_template_engine(settings.prompt_templates)
+
+    # Initialize tracing
+    setup_tracing(
+        service_name="llmproxy",
+        otlp_endpoint=settings.otel_exporter_endpoint,
+        enabled=settings.tracing_enabled,
+    )
+    _tracer = get_tracer(__name__)
+    logger.info(f"Tracing enabled: {settings.tracing_enabled}")
+
     yield
 
     # Shutdown
@@ -496,7 +508,6 @@ async def lifespan(app: FastAPI):
     summary = METRICS.summary()
     logger.info(f"Final metrics: {summary}")
     logger.info("Shutdown complete")
-
 
 app = FastAPI(title="LLM Proxy", version="0.1.0", lifespan=lifespan)
 
@@ -629,7 +640,7 @@ async def validate_template_endpoint(request: Request):
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy(request: Request, path: str):
-    global _http_client, _cache
+    global _http_client, _cache, _tracer
 
     method = request.method
     headers = dict(request.headers)
