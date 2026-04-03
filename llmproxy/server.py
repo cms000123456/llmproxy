@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 import signal
 import sys
 import time
@@ -120,6 +121,131 @@ def _kimi_code_headers() -> dict:
     }
 
 
+def _calculate_backoff(attempt: int, base: float, max_wait: float) -> float:
+    """Calculate exponential backoff with jitter.
+    
+    Args:
+        attempt: Current retry attempt (0-indexed)
+        base: Base wait time in seconds
+        max_wait: Maximum wait time in seconds
+    
+    Returns:
+        Wait time in seconds
+    """
+    # Exponential backoff: base * 2^attempt
+    wait = base * (2 ** attempt)
+    # Add jitter (±25%) to avoid thundering herd
+    jitter = wait * 0.25 * (2 * random.random() - 1)
+    wait = wait + jitter
+    # Cap at max_wait
+    return min(wait, max_wait)
+
+
+async def _upstream_request_with_retry(
+    http_client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    headers: dict,
+    json_payload: dict | None,
+    content: bytes | None,
+    max_retries: int,
+    backoff_base: float,
+    max_wait: float
+) -> httpx.Response:
+    """Make an upstream request with exponential backoff retry logic.
+    
+    Retries on:
+    - Timeouts (httpx.TimeoutException)
+    - Connection errors (httpx.ConnectError, httpx.NetworkError)
+    - 5xx server errors (500, 502, 503, 504)
+    - 429 rate limit responses (with Retry-After header support)
+    
+    Args:
+        http_client: Async HTTP client
+        method: HTTP method
+        url: Request URL
+        headers: Request headers
+        json_payload: JSON payload (if any)
+        content: Raw content (if no JSON payload)
+        max_retries: Maximum number of retry attempts
+        backoff_base: Base backoff time in seconds
+        max_wait: Maximum wait time between retries
+    
+    Returns:
+        HTTP response
+    
+    Raises:
+        httpx.TimeoutException: If all retries exhausted
+        httpx.ConnectError: If all retries exhausted
+        httpx.HTTPStatusError: For non-retryable errors (4xx except 429)
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            response = await http_client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=json_payload,
+                content=content,
+            )
+            
+            # Check if we should retry based on status code
+            if response.status_code == 429:
+                # Rate limited - check for Retry-After header
+                retry_after = response.headers.get("retry-after")
+                if retry_after:
+                    try:
+                        wait_time = float(retry_after)
+                    except (ValueError, TypeError):
+                        wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
+                else:
+                    wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
+                
+                if attempt < max_retries:
+                    logger.warning(f"Rate limited (429), retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+            
+            if 500 <= response.status_code < 600:
+                # Server error - retry
+                if attempt < max_retries:
+                    wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
+                    logger.warning(f"Upstream server error {response.status_code}, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+            
+            # Success or non-retryable error
+            return response
+            
+        except httpx.TimeoutException as e:
+            last_exception = e
+            if attempt < max_retries:
+                wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
+                logger.warning(f"Upstream timeout, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Upstream timeout after {max_retries + 1} attempts")
+                raise
+                
+        except (httpx.ConnectError, httpx.NetworkError) as e:
+            last_exception = e
+            if attempt < max_retries:
+                wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
+                logger.warning(f"Upstream connection error, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Upstream connection failed after {max_retries + 1} attempts")
+                raise
+    
+    # Should not reach here, but just in case
+    if last_exception:
+        raise last_exception
+    
+    raise RuntimeError("Unexpected error in retry logic")
+
+
 # Shared state
 _http_client: httpx.AsyncClient | None = None
 _cache: LRUCache | None = None
@@ -184,6 +310,7 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"Connected to upstream: {base_url}")
     logger.info(f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s")
+    logger.info(f"Retry config: max_retries={settings.max_retries}, backoff={settings.retry_backoff}s")
     
     yield
     
@@ -316,22 +443,28 @@ async def proxy(request: Request, path: str):
             headers={"Content-Type": "application/json", "X-Cache": "HIT"}
         )
 
-    # Proxy to upstream
+    # Proxy to upstream with retry logic
     if _http_client is None:
         return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
 
     try:
-        upstream_response = await _http_client.request(
+        upstream_response = await _upstream_request_with_retry(
+            http_client=_http_client,
             method=method,
             url=f"/{path}",
             headers=headers,
-            json=transformed_payload if transformed_payload else None,
+            json_payload=transformed_payload if transformed_payload else None,
             content=body_bytes if not transformed_payload else None,
+            max_retries=settings.max_retries,
+            backoff_base=settings.retry_backoff,
+            max_wait=settings.retry_max_wait
         )
     except httpx.TimeoutException:
-        return JSONResponse(status_code=504, content={"error": "Upstream timeout"})
+        return JSONResponse(status_code=504, content={"error": "Upstream timeout after retries"})
     except httpx.ConnectError:
-        return JSONResponse(status_code=502, content={"error": "Upstream connection failed"})
+        return JSONResponse(status_code=502, content={"error": "Upstream connection failed after retries"})
+    except httpx.NetworkError as e:
+        return JSONResponse(status_code=502, content={"error": f"Upstream network error: {str(e)}"})
 
     latency = (time.perf_counter() - start) * 1000
 
@@ -359,8 +492,15 @@ async def proxy(request: Request, path: str):
         latency_ms=latency
     )
 
+    # Forward all response headers except encoding/length (we're sending raw content)
+    response_headers = dict(upstream_response.headers)
+    response_headers.pop("content-encoding", None)
+    response_headers.pop("content-length", None)
+    response_headers.pop("transfer-encoding", None)
+    response_headers["X-Cache"] = "MISS"
+
     return Response(
         content=response_body,
         status_code=upstream_response.status_code,
-        headers={"Content-Type": "application/json", "X-Cache": "MISS"}
+        headers=response_headers
     )

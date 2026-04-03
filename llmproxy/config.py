@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300
     cache_max_size: int = 1000
 
+    # Retry configuration
+    max_retries: int = 3  # Number of retries for upstream requests
+    retry_backoff: float = 2.0  # Exponential backoff base (seconds)
+    retry_max_wait: float = 60.0  # Maximum wait time between retries
+
     # Kimi Code compatibility
     kimi_code_compat: bool = False  # inject Kimi Code agent headers
     kimi_code_version: str = "1.0.0"

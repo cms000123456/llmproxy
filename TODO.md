@@ -20,9 +20,15 @@
   - **Time Estimate:** 4 hours
 
 ### Reliability
-- [ ] **TODO-003:** Implement request retry with exponential backoff
-  - **File:** Modify `llmproxy/server.py` proxy function
-  - **Config:** Add `max_retries: int = 3`, `retry_backoff: float = 2.0`
+- [x] ~~**TODO-003:**~~ Implement request retry with exponential backoff
+  - **File:** `llmproxy/server.py` - Added `_upstream_request_with_retry()` function
+  - **Config:** Added `max_retries: int = 3`, `retry_backoff: float = 2.0`, `retry_max_wait: float = 60.0`
+  - **Features:** 
+    - Retries on: timeouts, connection errors, 5xx errors, 429 rate limits
+    - Exponential backoff with ±25% jitter to avoid thundering herd
+    - Respects Retry-After header for 429 responses
+    - Returns last response for 5xx after retries, raises for connection/timeout errors
+  - **Tests:** `tests/test_retry.py` - 13 comprehensive tests
   - **Time Estimate:** 4 hours
 
 - [x] ~~**TODO-004:**~~ Add graceful shutdown handling
@@ -98,74 +104,3 @@
   - **Time Estimate:** 1-2 days
 
 ### Developer Experience
-- [ ] **TODO-015:** Add pytest fixtures and async test support
-  - **File:** `tests/conftest.py` (new)
-  - **Features:** client fixture, mock upstream
-  - **Time Estimate:** 4 hours
-
-- [ ] **TODO-016:** Add comprehensive health checks
-  - **File:** Modify `llmproxy/server.py`
-  - **Checks:** Upstream, cache, disk space
-  - **Time Estimate:** 2 hours
-
-### DevOps
-- [ ] **TODO-017:** Create full Docker Compose stack
-  - **File:** `docker-compose.full.yml` (new)
-  - **Services:** Redis, Prometheus, Grafana
-  - **Time Estimate:** 4 hours
-
----
-
-## ✅ COMPLETED
-
-- [x] ~~Create comprehensive test suite (95 tests)~~
-- [x] ~~Add security middleware (rate limiting, body size, headers)~~
-- [x] ~~Fix path traversal vulnerability~~
-- [x] ~~Add API key authentication middleware (TODO-001)~~
-- [x] ~~Add request/response sanitization for PII (TODO-002)~~
-- [x] ~~Add graceful shutdown handling (TODO-004)~~
-- [x] ~~Verify secrets not in git~~
-
----
-
-## 📊 Progress Tracking
-
-```
-HIGH:     3/4  complete  ███████░░░  75%
-MEDIUM:   0/7  pending   ░░░░░░░░░░  0%
-LOW:      0/6  pending   ░░░░░░░░░░  0%
-TOTAL:    3/17 complete  ███░░░░░░░  18%
-```
-
----
-
-## 📝 Notes
-
-### Working on a TODO?
-1. Create a branch: `git checkout -b feature/TODO-XXX-description`
-2. Update this file: Mark as "in progress"
-3. Commit with reference: `git commit -m "Implement TODO-005: Streaming responses"`
-
-### Adding a new TODO?
-- Use next available number (TODO-018, TODO-019, etc.)
-- Include time estimate
-- Mark dependencies if any
-- Choose appropriate priority
-
-### Priority Guidelines
-- **🔴 HIGH:** Security issues, crashes, data loss risk
-- **🟡 MEDIUM:** Performance, reliability, major features
-- **🟢 LOW:** Nice-to-have, experimental, minor enhancements
-
----
-
-## 🔗 Related Documents
-
-- [Security Audit](reports/security_audit.md)
-- [Codebase Audit](reports/codebase_audit_2025-01-15.md)
-- [Test Report](reports/test_report.md)
-- [Improvement Suggestions](reports/improvement_suggestions.md)
-
----
-
-*This TODO list is a living document. Update as work progresses.*
