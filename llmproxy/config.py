@@ -1,7 +1,7 @@
 """Configuration for LLM Proxy."""
 
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 
 class Settings(BaseSettings):
@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     cost_upstream_price: float = 0.01   # $ per 1K tokens
     cost_downstream_price: float = 0.03  # $ per 1K tokens
     cost_storage_path: str = "data/cost_tracker.json"
+
+    # Prompt templates configuration
+    prompt_templates: Dict[str, Dict[str, Any]] = {}  # Custom templates to register
 
     class Config:
         env_prefix = "LLM_PROXY_"

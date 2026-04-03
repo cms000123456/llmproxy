@@ -23,6 +23,7 @@ from .storage import create_backend, MemoryBackend
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
 from .filters import filter_messages
+from . import templates
 from .compressors import compress_messages, count_message_tokens, count_tokens
 from .middleware.sanitize import SanitizationMiddleware
 from .auth import APIKeyAuthMiddleware, APIKeyManager
@@ -413,6 +414,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"Retry config: max_retries={settings.max_retries}, backoff={settings.retry_backoff}s")
     logger.info(f"Streaming support: enabled")
     
+
+    # Initialize template engine
+    templates.init_template_engine(settings.prompt_templates)
     yield
     
     # Shutdown
