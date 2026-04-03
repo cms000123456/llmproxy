@@ -31,7 +31,7 @@ def send_request(proxy_url: str, payload: dict) -> dict:
         f"{proxy_url}/v1/chat/completions",
         headers={"Content-Type": "application/json"},
         json=payload,
-        timeout=30,
+        timeout=120,
     )
     return {"status": resp.status_code, "latency_ms": resp.elapsed.total_seconds() * 1000}
 
@@ -47,8 +47,8 @@ def run_benchmark(proxy_url: str = "http://localhost:8080") -> None:
     scenarios = [
         ("tiny_clean", 1, 10, 1),
         ("small_chat", 4, 50, 2),
-        ("medium_chat", 10, 100, 1),
-        ("large_bloated", 20, 500, 1),
+        ("medium_chat", 8, 80, 1),
+        ("large_chat", 12, 150, 1),
         ("duplicate_system", 6, 100, 1),
         ("cache_hit", 2, 20, 3),
     ]

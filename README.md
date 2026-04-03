@@ -49,14 +49,14 @@ The proxy listens on `http://localhost:8080` by default.
 # 1. Set your upstream key
 export LLM_PROXY_UPSTREAM_API_KEY="your-api-key"
 
-# 2. Start the proxy + Ollama
-# docker compose up -d
+# 2. Start the proxy + Ollama (with GPU support)
+docker compose up -d
 
 # 3. Pull a lightweight local model for compression/relevance work
-# docker exec -it ollama ollama pull llama3.2
+docker exec ollama ollama pull llama3.2
 ```
 
-> **Note:** Run `docker compose up -d` after pulling the model. The proxy will talk to Ollama automatically on the internal Docker network at `http://ollama:11434`.
+> **Note:** The Ollama container is configured with GPU support (`deploy.resources.reservations.devices`). The proxy will talk to Ollama automatically on the internal Docker network at `http://ollama:11434`.
 
 ## Usage with a Client
 

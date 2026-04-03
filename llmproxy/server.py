@@ -134,6 +134,8 @@ async def proxy(request: Request, path: str):
         return JSONResponse(content=cached)
 
     # Proxy to upstream
+    # Prevent compression to avoid decompression issues on the client side
+    headers["accept-encoding"] = "identity"
     try:
         resp = await _http_client.request(
             method=method,
@@ -157,6 +159,12 @@ async def proxy(request: Request, path: str):
 
     content_type = resp.headers.get("content-type", "application/json")
 
+    # Clean hop-by-hop headers because httpx already decompresses resp.content/aiter_bytes
+    response_headers = dict(resp.headers)
+    for hop_header in ("content-encoding", "transfer-encoding", "content-length"):
+        response_headers.pop(hop_header, None)
+        response_headers.pop(hop_header.title(), None)
+
     # Cache store for non-streaming responses
     if is_chat_completion and settings.enable_cache and _cache is not None and resp.status_code == 200:
         if "text/event-stream" not in content_type:
@@ -170,6 +178,6 @@ async def proxy(request: Request, path: str):
         async def stream_generator():
             async for chunk in resp.aiter_bytes():
                 yield chunk
-        return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=dict(resp.headers))
+        return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=response_headers)
 
-    return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+    return Response(content=resp.content, status_code=resp.status_code, headers=response_headers)
