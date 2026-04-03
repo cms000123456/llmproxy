@@ -1,0 +1,42 @@
+services:
+  llmproxy:
+    build: .
+    container_name: llmproxy
+    ports:
+      - "8080:8080"
+    environment:
+      - LLM_PROXY_UPSTREAM_BASE_URL=${LLM_PROXY_UPSTREAM_BASE_URL:-https://api.moonshot.cn/v1}
+      - LLM_PROXY_UPSTREAM_API_KEY=${LLM_PROXY_UPSTREAM_API_KEY:-}
+      - LLM_PROXY_ENABLE_FILTERING=true
+      - LLM_PROXY_ENABLE_COMPRESSION=true
+      - LLM_PROXY_MAX_TOTAL_TOKENS=120000
+      - LLM_PROXY_ENABLE_CACHE=true
+      - LLM_PROXY_OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROXY_OLLAMA_MODEL=llama3.2
+      - LLM_PROXY_OLLAMA_ENABLE_COMPRESSION=true
+      - LLM_PROXY_OLLAMA_ENABLE_RELEVANCE_FILTER=false
+    depends_on:
+      - ollama
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama:/root/.ollama
+    # Expose only inside the Docker network by default.
+    # Uncomment the next line if you want to hit Ollama directly from the host.
+    # ports:
+    #   - "11434:11434"
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+
+networks:
+  llmproxy-net:
+    driver: bridge
+
+volumes:
+  ollama:

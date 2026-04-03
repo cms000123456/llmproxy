@@ -1,0 +1,48 @@
+"""Configuration for LLM Proxy."""
+
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    # Upstream API
+    upstream_base_url: str = "https://api.moonshot.cn/v1"
+    upstream_api_key: str = ""
+
+    # Proxy server
+    host: str = "0.0.0.0"
+    port: int = 8080
+
+    # Filtering
+    enable_filtering: bool = True
+    max_message_length: int = 32000  # truncate individual messages longer than this
+    strip_base64_images: bool = False  # remove image content blocks entirely
+    deduplicate_system_messages: bool = True
+    remove_empty_messages: bool = True
+
+    # Compression
+    enable_compression: bool = True
+    compression_strategy: str = "truncate_oldest"  # or "summarize_oldest"
+    max_total_tokens: int = 120000  # target token budget for the full prompt
+    summary_model: str = "moonshot-v1-8k"  # cheaper model for summarization
+
+    # Ollama local LLM integration
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"          # lightweight model for local grunt work
+    ollama_enable_compression: bool = True   # use Ollama to summarize old context
+    ollama_enable_relevance_filter: bool = False  # drop low-relevance older messages via Ollama
+    ollama_relevance_threshold: float = 0.5  # keep messages scored >= this (0-1)
+
+    # Caching
+    enable_cache: bool = True
+    cache_ttl_seconds: int = 300
+    cache_max_size: int = 1000
+
+    # Metrics / logging
+    log_level: str = "INFO"
+
+    class Config:
+        env_prefix = "LLM_PROXY_"
+
+
+settings = Settings()
