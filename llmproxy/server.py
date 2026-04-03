@@ -24,8 +24,12 @@ _cache: LRUCache | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client, _cache
+    # Avoid double /v1 when base_url already ends with it and client sends /v1/chat/completions
+    base_url = settings.upstream_base_url
+    if base_url.rstrip("/").endswith("/v1"):
+        base_url = base_url.rstrip("/")[:-3]
     _http_client = httpx.AsyncClient(
-        base_url=settings.upstream_base_url,
+        base_url=base_url,
         headers={"Authorization": f"Bearer {settings.upstream_api_key}"} if settings.upstream_api_key else {},
         timeout=httpx.Timeout(120.0, connect=10.0),
     )
