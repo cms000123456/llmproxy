@@ -14,6 +14,8 @@ from rich.panel import Panel
 from rich.prompt import Prompt, IntPrompt
 from rich.table import Table
 
+import asyncio
+
 from .tools import TOOL_DEFINITIONS, execute_tool
 
 console = Console()
@@ -357,7 +359,7 @@ class Agent:
                 name = tc.function.name
                 args = json.loads(tc.function.arguments)
                 console.print(f"[dim]→ Tool call: {name}({json.dumps(args)})[/dim]")
-                result = execute_tool(name, args)
+                result = asyncio.run(execute_tool(name, args))
                 # Some providers (e.g. kimi-for-coding) omit tool_call_id; generate a fallback
                 tool_call_id = tc.id or f"call_{hash(json.dumps(args, sort_keys=True))}"
                 self.messages.append({
