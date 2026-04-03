@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # Ollama local LLM integration
     ollama_base_url: str = "http://localhost:11434"
+    ollama_api_key: str = ""  # Optional API key for Ollama (if behind auth proxy)
     ollama_model: str = "llama3.2"          # lightweight model for local grunt work
     ollama_enable_compression: bool = True   # use Ollama to summarize old context
     ollama_enable_relevance_filter: bool = False  # drop low-relevance older messages via Ollama

@@ -241,6 +241,7 @@ python benchmark.py http://localhost:8080
 | `LLM_PROXY_CACHE_TTL_SECONDS` | `300` | Cache entry TTL |
 | `LLM_PROXY_CACHE_MAX_SIZE` | `1000` | Max cached entries |
 | `LLM_PROXY_OLLAMA_BASE_URL` | `http://localhost:11434` | Local Ollama instance URL |
+| `LLM_PROXY_OLLAMA_API_KEY` | `''` | Optional API key for Ollama (if behind auth proxy) |
 | `LLM_PROXY_OLLAMA_MODEL` | `llama3.2` | Model name for local grunt work |
 | `LLM_PROXY_OLLAMA_ENABLE_COMPRESSION` | `true` | Use Ollama to summarize old context |
 | `LLM_PROXY_OLLAMA_ENABLE_RELEVANCE_FILTER` | `false` | Use Ollama to drop low-relevance older messages |

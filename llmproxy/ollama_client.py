@@ -8,10 +8,22 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
 
 class OllamaClient:
-    def __init__(self, base_url: str = DEFAULT_OLLAMA_URL, timeout: float = 60.0):
+    def __init__(
+        self, 
+        base_url: str = DEFAULT_OLLAMA_URL, 
+        timeout: float = 60.0,
+        api_key: Optional[str] = None
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self.api_key = api_key
+        
+        # Setup headers with optional auth
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        
+        self._client = httpx.AsyncClient(timeout=timeout, headers=headers)
 
     async def generate(
         self,

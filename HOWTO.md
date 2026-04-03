@@ -430,6 +430,7 @@ LLM_PROXY_ENABLE_CACHE=true
 # Ollama (optional)
 LLM_PROXY_OLLAMA_ENABLE_COMPRESSION=true
 LLM_PROXY_OLLAMA_MODEL=llama3.2
+# LLM_PROXY_OLLAMA_API_KEY=your-key  # Only if Ollama is behind auth
 ```
 
 ### Production Environment
