@@ -12,11 +12,31 @@ def _clear_llm_proxy_env():
             del os.environ[key]
 
 
+def _get_settings_without_env_file():
+    """Get settings without loading .env file (for testing true defaults)."""
+    _clear_llm_proxy_env()
+    # Temporarily rename .env to prevent loading
+    env_path = ".env"
+    env_backup = ".env.backup"
+    env_existed = os.path.exists(env_path)
+    
+    if env_existed:
+        os.rename(env_path, env_backup)
+    
+    try:
+        # Force reimport to get fresh settings
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        return config.Settings()
+    finally:
+        if env_existed:
+            os.rename(env_backup, env_path)
+
+
 def test_default_values():
     """Test default configuration values."""
-    _clear_llm_proxy_env()
-    
-    settings = Settings()
+    settings = _get_settings_without_env_file()
     
     assert settings.upstream_base_url == "https://api.moonshot.cn/v1"
     assert settings.host == "0.0.0.0"
@@ -38,7 +58,11 @@ def test_env_prefix():
     os.environ["LLM_PROXY_LOG_LEVEL"] = "DEBUG"
     
     try:
-        settings = Settings()
+        # Force reimport to pick up env vars
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.port == 9999
         assert settings.log_level == "DEBUG"
     finally:
@@ -57,7 +81,10 @@ def test_env_override():
     os.environ["LLM_PROXY_CACHE_MAX_SIZE"] = "500"
     
     try:
-        settings = Settings()
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.enable_cache == False
         assert settings.cache_max_size == 500
     finally:
@@ -71,7 +98,7 @@ def test_compression_strategies():
     """Test valid compression strategies."""
     _clear_llm_proxy_env()
     
-    settings = Settings()
+    settings = _get_settings_without_env_file()
     
     # Default should be truncate_oldest
     assert settings.compression_strategy == "truncate_oldest"
@@ -79,7 +106,10 @@ def test_compression_strategies():
     # Can be set to summarize_oldest
     os.environ["LLM_PROXY_COMPRESSION_STRATEGY"] = "summarize_oldest"
     try:
-        settings = Settings()
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.compression_strategy == "summarize_oldest"
     finally:
         del os.environ["LLM_PROXY_COMPRESSION_STRATEGY"]
@@ -89,9 +119,7 @@ def test_compression_strategies():
 
 def test_kimi_code_compat():
     """Test Kimi Code compatibility settings."""
-    _clear_llm_proxy_env()
-    
-    settings = Settings()
+    settings = _get_settings_without_env_file()
     
     # Defaults
     assert settings.kimi_code_compat == False
@@ -103,7 +131,10 @@ def test_kimi_code_compat():
     os.environ["LLM_PROXY_KIMI_CODE_VERSION"] = "2.0.0"
     
     try:
-        settings = Settings()
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.kimi_code_compat == True
         assert settings.kimi_code_version == "2.0.0"
     finally:
@@ -115,9 +146,7 @@ def test_kimi_code_compat():
 
 def test_ollama_settings():
     """Test Ollama integration settings."""
-    _clear_llm_proxy_env()
-    
-    settings = Settings()
+    settings = _get_settings_without_env_file()
     
     # Defaults
     assert settings.ollama_base_url == "http://localhost:11434"
@@ -129,7 +158,10 @@ def test_ollama_settings():
     os.environ["LLM_PROXY_OLLAMA_MODEL"] = "mistral"
     
     try:
-        settings = Settings()
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.ollama_base_url == "http://ollama:11434"
         assert settings.ollama_model == "mistral"
     finally:
@@ -141,9 +173,7 @@ def test_ollama_settings():
 
 def test_filtering_settings():
     """Test message filtering settings."""
-    _clear_llm_proxy_env()
-    
-    settings = Settings()
+    settings = _get_settings_without_env_file()
     
     # Defaults
     assert settings.deduplicate_system_messages == True
@@ -155,7 +185,10 @@ def test_filtering_settings():
     os.environ["LLM_PROXY_STRIP_BASE64_IMAGES"] = "true"
     
     try:
-        settings = Settings()
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.deduplicate_system_messages == False
         assert settings.strip_base64_images == True
     finally:
@@ -176,7 +209,10 @@ def test_type_coercion():
     os.environ["LLM_PROXY_RETRY_BACKOFF"] = "1.5"
     
     try:
-        settings = Settings()
+        import importlib
+        from llmproxy import config
+        importlib.reload(config)
+        settings = config.Settings()
         assert settings.port == 9000  # int
         assert settings.enable_cache == False  # bool
         assert settings.cache_max_size == 2000  # int
