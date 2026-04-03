@@ -333,3 +333,19 @@ Works correctly with Docker/Kubernetes rolling updates.
 ## License
 
 MIT License - see LICENSE file for details.
+
+---
+
+## CI/CD
+
+[![CI](https://github.com/cms000123456/llmproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/cms000123456/llmproxy/actions/workflows/ci.yml)
+
+### Automated Checks
+
+| Check | Status | Description |
+|-------|--------|-------------|
+| Lint | ✅ | Ruff code linting |
+| Type Check | 🟡 | mypy type checking (gradual) |
+| Test | ✅ | pytest on Python 3.9-3.12 |
+| Security | ✅ | Bandit security audit |
+
