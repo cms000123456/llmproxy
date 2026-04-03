@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300
     cache_max_size: int = 1000
 
+    # Kimi Code compatibility
+    kimi_code_compat: bool = False  # inject Kimi Code agent headers
+    kimi_code_version: str = "1.0.0"
+    kimi_code_device_name: str = "kimi-proxy"
+    kimi_code_device_id: str = ""
+
     # Metrics / logging
     log_level: str = "INFO"
 

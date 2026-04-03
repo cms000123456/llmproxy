@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
@@ -14,6 +15,17 @@ from .cache import LRUCache
 from .metrics import METRICS
 from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
+
+
+def _kimi_code_headers() -> dict:
+    device_id = settings.kimi_code_device_id or str(uuid.uuid4())
+    return {
+        "User-Agent": f"KimiCLI/{settings.kimi_code_version}",
+        "X-Msh-Platform": "kimi_cli",
+        "X-Msh-Version": settings.kimi_code_version,
+        "X-Msh-Device-Name": settings.kimi_code_device_name,
+        "X-Msh-Device-Id": device_id,
+    }
 
 
 # Shared state
@@ -28,9 +40,14 @@ async def lifespan(app: FastAPI):
     base_url = settings.upstream_base_url
     if base_url.rstrip("/").endswith("/v1"):
         base_url = base_url.rstrip("/")[:-3]
+    default_headers = {}
+    if settings.upstream_api_key:
+        default_headers["Authorization"] = f"Bearer {settings.upstream_api_key}"
+    if settings.kimi_code_compat:
+        default_headers.update(_kimi_code_headers())
     _http_client = httpx.AsyncClient(
         base_url=base_url,
-        headers={"Authorization": f"Bearer {settings.upstream_api_key}"} if settings.upstream_api_key else {},
+        headers=default_headers,
         timeout=httpx.Timeout(120.0, connect=10.0),
     )
     _cache = LRUCache(max_size=settings.cache_max_size, ttl_seconds=settings.cache_ttl_seconds)
@@ -65,6 +82,13 @@ async def proxy(request: Request, path: str):
     # Authorization override: use proxy config if no client key provided, else forward client key
     if not headers.get("authorization") and settings.upstream_api_key:
         headers["authorization"] = f"Bearer {settings.upstream_api_key}"
+
+    # Kimi Code compatibility: inject agent headers and strip client fingerprints
+    if settings.kimi_code_compat:
+        # Remove any incoming user-agent so it doesn't get concatenated with KimiCLI
+        headers.pop("user-agent", None)
+        for k, v in _kimi_code_headers().items():
+            headers[k] = v
 
     body_bytes = await request.body()
     payload = {}
