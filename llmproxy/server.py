@@ -23,7 +23,7 @@ from .storage import create_backend, MemoryBackend
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
 from .filters import filter_messages
-from .compressors import compress_messages, count_message_tokens
+from .compressors import compress_messages, count_message_tokens, count_tokens
 from .middleware.sanitize import SanitizationMiddleware
 from .auth import APIKeyAuthMiddleware, APIKeyManager
 from .cost_tracker import COST_TRACKER, record_api_key_usage, check_budget
@@ -627,7 +627,7 @@ async def proxy(request: Request, path: str):
         cached_latency = (time.perf_counter() - start) * 1000
         METRICS.record_request(
             upstream_tokens=original_token_count,
-            downstream_tokens=count_message_tokens(
+            downstream_tokens=count_tokens(
                 response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
                 payload.get("model", "gpt-4")
             ),
@@ -640,7 +640,7 @@ async def proxy(request: Request, path: str):
             record_api_key_usage(
                 client_api_key,
                 upstream_tokens=original_token_count,
-                downstream_tokens=count_message_tokens(
+                downstream_tokens=count_tokens(
                     response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
                     payload.get("model", "gpt-4")
                 )
@@ -691,7 +691,7 @@ async def proxy(request: Request, path: str):
     if response_data and "choices" in response_data:
         for choice in response_data.get("choices", []):
             content = choice.get("message", {}).get("content", "")
-            downstream_tokens += count_message_tokens(content, payload.get("model", "gpt-4"))
+            downstream_tokens += count_tokens(content, payload.get("model", "gpt-4"))
 
     METRICS.record_request(
         upstream_tokens=original_token_count,
