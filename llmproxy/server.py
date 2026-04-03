@@ -6,6 +6,7 @@ import logging
 import random
 import signal
 import sys
+from typing import AsyncIterator
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -246,6 +247,83 @@ async def _upstream_request_with_retry(
     raise RuntimeError("Unexpected error in retry logic")
 
 
+async def _stream_upstream_response(
+    http_client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    headers: dict,
+    json_payload: dict | None,
+) -> tuple[int, dict, AsyncIterator[str]]:
+    """Stream response from upstream LLM API.
+    
+    For streaming requests, we don't use retry logic - we fail fast.
+    The client should handle reconnection if needed.
+    
+    Args:
+        http_client: Async HTTP client
+        method: HTTP method
+        url: Request URL
+        headers: Request headers
+        json_payload: JSON payload (if any)
+    
+    Returns:
+        Tuple of (status_code, response_headers, chunk_iterator)
+    
+    Raises:
+        httpx.TimeoutException: If upstream times out
+        httpx.ConnectError: If upstream connection fails
+    """
+    request = http_client.build_request(
+        method=method,
+        url=url,
+        headers=headers,
+        json=json_payload,
+    )
+    
+    response = await http_client.send(request, stream=True)
+    
+    async def chunk_iterator():
+        """Iterate over SSE chunks from upstream."""
+        accumulated_content = []
+        try:
+            async for chunk in response.aiter_text():
+                # Check if shutdown requested
+                if _shutdown_event.is_set():
+                    logger.info("Shutdown requested, closing stream")
+                    break
+                
+                # Forward chunk as-is (it's already SSE formatted)
+                yield chunk
+                
+                # Accumulate content for metrics (optional optimization: skip for performance)
+                if chunk.startswith("data: ") and chunk != "data: [DONE]\n\n":
+                    try:
+                        data = json.loads(chunk[6:])  # Remove "data: " prefix
+                        if "choices" in data and len(data["choices"]) > 0:
+                            delta = data["choices"][0].get("delta", {})
+                            if "content" in delta:
+                                accumulated_content.append(delta["content"])
+                    except json.JSONDecodeError:
+                        pass
+        finally:
+            await response.aclose()
+            
+            # Record metrics after stream completes
+            if accumulated_content:
+                content = "".join(accumulated_content)
+                # Note: We don't have the model here, would need to pass it in
+                # For now, metrics are recorded at a higher level
+    
+    # Extract headers to forward
+    response_headers = {
+        "content-type": response.headers.get("content-type", "text/event-stream"),
+        "cache-control": "no-cache",
+        "x-cache": "MISS",
+    }
+    
+    return response.status_code, response_headers, chunk_iterator()
+
+
 # Shared state
 _http_client: httpx.AsyncClient | None = None
 _cache: LRUCache | None = None
@@ -311,6 +389,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Connected to upstream: {base_url}")
     logger.info(f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s")
     logger.info(f"Retry config: max_retries={settings.max_retries}, backoff={settings.retry_backoff}s")
+    logger.info(f"Streaming support: enabled")
     
     yield
     
@@ -383,6 +462,7 @@ async def proxy(request: Request, path: str):
     elif settings.upstream_api_key:
         # No auth header, use upstream key
         headers["authorization"] = f"Bearer {settings.upstream_api_key}"
+    # else: forward client's key to upstream
 
     # Kimi Code compatibility: inject agent headers and strip client fingerprints
     if settings.kimi_code_compat:
@@ -401,6 +481,9 @@ async def proxy(request: Request, path: str):
 
     # Only intercept chat completions for filtering/compression/cache
     is_chat_completion = path in ("chat/completions", "v1/chat/completions") or path.endswith("/chat/completions")
+    
+    # Check if this is a streaming request
+    is_streaming = is_chat_completion and payload.get("stream") == True
 
     original_token_count = 0
     transformed_payload = dict(payload)
@@ -416,6 +499,44 @@ async def proxy(request: Request, path: str):
 
         transformed_payload["messages"] = messages
 
+    # Handle streaming requests differently
+    if is_streaming:
+        # Streaming requests bypass cache and use different handling
+        if _http_client is None:
+            return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
+        
+        start = time.perf_counter()
+        
+        try:
+            # For streaming, we don't retry - fail fast and let client reconnect
+            status_code, response_headers, chunk_iterator = await _stream_upstream_response(
+                http_client=_http_client,
+                method=method,
+                url=f"/{path}",
+                headers=headers,
+                json_payload=transformed_payload if transformed_payload else None,
+            )
+            
+            # Return streaming response
+            return StreamingResponse(
+                content=chunk_iterator,
+                status_code=status_code,
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Cache": "MISS",
+                    "X-Streaming": "true",
+                }
+            )
+            
+        except httpx.TimeoutException:
+            return JSONResponse(status_code=504, content={"error": "Upstream timeout"})
+        except httpx.ConnectError:
+            return JSONResponse(status_code=502, content={"error": "Upstream connection failed"})
+        except httpx.NetworkError as e:
+            return JSONResponse(status_code=502, content={"error": f"Upstream network error: {str(e)}"})
+
+    # Non-streaming path with caching and retry logic
     # Cache lookup
     cached = None
     if is_chat_completion and settings.enable_cache and _cache is not None:

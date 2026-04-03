@@ -41,7 +41,7 @@
 ## 🟡 MEDIUM PRIORITY (Short-term)
 
 ### Performance
-- [ ] **TODO-005:** Add streaming response support for `/chat/completions`
+- [x] ~~**TODO-005:**~~ Add streaming response support for `/chat/completions`
   - **File:** Modify `llmproxy/server.py`
   - **Features:** SSE streaming, chunked responses
   - **Time Estimate:** 2-3 days
