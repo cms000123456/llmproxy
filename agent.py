@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
 
 from llmproxy.cli_agent import Agent, _list_sessions, _get_project_id
 
@@ -68,19 +69,23 @@ def run(
             console.print("[dim]No saved sessions for this project.[/dim]")
             return
         
-        from rich.table import Table
         table = Table(title=f"Saved Sessions for {os.getcwd()}")
         table.add_column("Session ID", style="cyan")
         table.add_column("Created", style="dim")
         table.add_column("Updated", style="dim")
+        table.add_column("Tokens", justify="right")
         table.add_column("Messages", justify="right")
         table.add_column("Preview", style="green")
         
         for session in sessions:
+            usage = session.get("usage", {})
+            total_tokens = usage.get("total_tokens", 0)
+            
             table.add_row(
                 session["session_id"],
                 session["created"][:16].replace("T", " ") if session["created"] != "Unknown" else "—",
                 session["updated"][:16].replace("T", " ") if session["updated"] != "Unknown" else "—",
+                f"{total_tokens:,}" if total_tokens else "—",
                 str(session["message_count"]),
                 session["preview"][:40] + "..." if len(session["preview"]) > 40 else session["preview"] or "[dim]—[/dim]",
             )
@@ -100,14 +105,18 @@ def run(
     if prompt:
         reply = agent.chat(prompt)
         console.print(Markdown(reply))
+        console.print(agent.get_usage_summary())
         return
 
+    # Show welcome panel with usage info
+    usage_str = agent.get_usage_summary()
     console.print(Panel.fit(
         f"[bold green]Coding Agent[/bold green]\n"
         f"Model: {model}\n"
         f"Base URL: {base_url}\n"
         f"Workspace: {os.getcwd()}\n"
         f"Session: {agent.session_id[:24]}...\n"
+        f"{usage_str}\n"
         f"Type [bold]'exit'[/bold] or [bold]'quit'[/bold] to leave.",
         title="Welcome",
     ))
@@ -130,6 +139,7 @@ def run(
             reply = agent.chat(user_input)
 
         console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
+        console.print(agent.get_usage_summary())
 
 
 if __name__ == "__main__":

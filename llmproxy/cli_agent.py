@@ -31,6 +31,19 @@ Guidelines:
 # Store conversations outside the repo to avoid git contamination
 CONVERSATIONS_DIR = Path.home() / ".local" / "share" / "llmproxy" / "conversations"
 
+# Pricing per 1M tokens (approximate for Kimi/Moonshot)
+# These are conservative estimates - adjust based on actual pricing
+PRICING = {
+    "kimi-for-coding": {"input": 0.50, "output": 2.00},
+    "moonshot-v1-8k": {"input": 0.50, "output": 2.00},
+    "moonshot-v1-32k": {"input": 0.50, "output": 2.00},
+    "moonshot-v1-128k": {"input": 0.50, "output": 2.00},
+    "gpt-4": {"input": 30.00, "output": 60.00},
+    "gpt-4o": {"input": 2.50, "output": 10.00},
+    "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+    "default": {"input": 0.50, "output": 2.00},
+}
+
 
 def _get_project_id() -> str:
     """Generate a unique ID for the current project/workspace."""
@@ -64,45 +77,54 @@ def _list_sessions(project_id: str) -> list[dict]:
                 "updated": data.get("updated", "Unknown"),
                 "preview": data.get("preview", "No preview"),
                 "message_count": len(data.get("messages", [])),
+                "usage": data.get("usage", {"prompt_tokens": 0, "completion_tokens": 0}),
             })
         except Exception:
             continue
     return sessions
 
 
-def _save_session(project_id: str, session_id: str, messages: list, preview: str = ""):
+def _save_session(project_id: str, session_id: str, messages: list, usage: dict = None, preview: str = ""):
     """Save a conversation session to disk."""
     conv_path = _get_conversation_path(project_id, session_id)
     now = datetime.now().isoformat()
     
+    # Try to get existing data to preserve creation time
+    created = now
+    if conv_path.exists():
+        try:
+            existing = json.loads(conv_path.read_text())
+            created = existing.get("created", now)
+        except Exception:
+            pass
+    
     data = {
         "session_id": session_id,
-        "created": getattr(_save_session, f"created_{session_id}", now),
+        "created": created,
         "updated": now,
         "project_path": os.getcwd(),
         "preview": preview[:200] if preview else "",
         "messages": messages,
+        "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
-    # Store creation time persistently
-    if not hasattr(_save_session, f"created_{session_id}"):
-        _save_session.__setattr__(f"created_{session_id}", data["created"])
     
     conv_path.write_text(json.dumps(data, indent=2))
 
 
-def _load_session(project_id: str, session_id: str) -> Optional[list[dict]]:
-    """Load a conversation session from disk."""
+def _load_session(project_id: str, session_id: str) -> tuple[Optional[list[dict]], Optional[dict]]:
+    """Load a conversation session from disk.
+    
+    Returns: (messages, usage) tuple
+    """
     conv_path = _get_conversation_path(project_id, session_id)
     if not conv_path.exists():
-        return None
+        return None, None
     
     try:
         data = json.loads(conv_path.read_text())
-        # Store creation time for future saves
-        _save_session.__setattr__(f"created_{session_id}", data.get("created", datetime.now().isoformat()))
-        return data.get("messages", [])
+        return data.get("messages", []), data.get("usage")
     except Exception:
-        return None
+        return None, None
 
 
 def _select_session(project_id: str) -> Optional[str]:
@@ -122,17 +144,21 @@ def _select_session(project_id: str) -> Optional[str]:
     table.add_column("#", style="cyan", justify="right")
     table.add_column("Created", style="dim")
     table.add_column("Updated", style="dim")
-    table.add_column("Messages", justify="right")
+    table.add_column("Tokens", justify="right")
     table.add_column("Preview", style="green")
     
     table.add_row("0", "—", "—", "—", "[dim]Start new session[/dim]")
     
     for i, session in enumerate(sessions[:10], 1):  # Show last 10
+        usage = session.get("usage", {})
+        total_tokens = usage.get("total_tokens", 0)
+        token_str = f"{total_tokens:,}" if total_tokens else "—"
+        
         table.add_row(
             str(i),
             session["created"][:16].replace("T", " ") if session["created"] != "Unknown" else "—",
             session["updated"][:16].replace("T", " ") if session["updated"] != "Unknown" else "—",
-            str(session["message_count"]),
+            token_str,
             session["preview"][:50] + "..." if len(session["preview"]) > 50 else session["preview"] or "[dim]No preview[/dim]",
         )
     
@@ -144,6 +170,25 @@ def _select_session(project_id: str) -> Optional[str]:
         return None
     
     return sessions[choice - 1]["session_id"]
+
+
+def _format_usage(usage: dict, model: str) -> str:
+    """Format usage statistics with cost estimation."""
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+    
+    # Get pricing for model
+    pricing = PRICING.get(model, PRICING["default"])
+    input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
+    output_cost = (completion_tokens / 1_000_000) * pricing["output"]
+    total_cost = input_cost + output_cost
+    
+    return (
+        f"[dim]Tokens: {total_tokens:,} "
+        f"(↑{prompt_tokens:,} ↓{completion_tokens:,}) "
+        f"| Est. cost: ${total_cost:.4f}[/dim]"
+    )
 
 
 class Agent:
@@ -163,6 +208,9 @@ class Agent:
         self.project_id = _get_project_id()
         self.max_tool_rounds = 30
         
+        # Usage tracking
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        
         # Determine session ID
         if session_id:
             self.session_id = session_id
@@ -174,10 +222,12 @@ class Agent:
             self.session_id = self._generate_session_id()
         
         # Load or initialize messages
-        loaded_messages = _load_session(self.project_id, self.session_id) if resume or session_id else None
+        loaded_messages, loaded_usage = _load_session(self.project_id, self.session_id) if resume or session_id else (None, None)
         if loaded_messages:
             self.messages = loaded_messages
-            console.print(f"[dim]↳ Resumed session: {self.session_id[:16]}...[/dim]")
+            if loaded_usage:
+                self.usage = loaded_usage
+            console.print(f"[dim]↳ Resumed session: {self.session_id[:16]}... ({self.usage['total_tokens']:,} tokens)[/dim]")
         else:
             self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
     
@@ -196,7 +246,21 @@ class Agent:
     def _save(self):
         """Persist current conversation state."""
         preview = self._get_first_user_message()
-        _save_session(self.project_id, self.session_id, self.messages, preview)
+        _save_session(self.project_id, self.session_id, self.messages, self.usage, preview)
+    
+    def _update_usage(self, response):
+        """Update usage statistics from response."""
+        if hasattr(response, 'usage') and response.usage:
+            usage = response.usage
+            self.usage["prompt_tokens"] += getattr(usage, 'prompt_tokens', 0)
+            self.usage["completion_tokens"] += getattr(usage, 'completion_tokens', 0)
+            self.usage["total_tokens"] = (
+                self.usage["prompt_tokens"] + self.usage["completion_tokens"]
+            )
+    
+    def get_usage_summary(self) -> str:
+        """Get formatted usage summary."""
+        return _format_usage(self.usage, self.model)
     
     def chat(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})
@@ -211,6 +275,10 @@ class Agent:
                 tools=TOOL_DEFINITIONS,
                 temperature=0.3,
             )
+            
+            # Track token usage
+            self._update_usage(response)
+            
             choice = response.choices[0]
             assistant_msg = choice.message
 
