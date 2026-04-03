@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from openai import OpenAI
 from rich.console import Console
 from rich.markdown import Markdown
@@ -16,6 +17,28 @@ from rich.table import Table
 from .tools import TOOL_DEFINITIONS, execute_tool
 
 console = Console()
+
+
+def _fetch_proxy_savings(base_url: str) -> dict:
+    """Fetch token savings from proxy metrics endpoint."""
+    try:
+        # Extract base URL without /v1 path
+        metrics_url = base_url.replace("/v1", "").rstrip("/") + "/metrics"
+        resp = httpx.get(metrics_url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            metrics = data.get("metrics", {})
+            return {
+                "upstream_tokens": metrics.get("tokens_upstream", 0),
+                "downstream_tokens": metrics.get("tokens_downstream", 0),
+                "tokens_saved": metrics.get("tokens_saved", 0),
+                "cache_hits": metrics.get("cache_hits", 0),
+                "cache_hit_rate": metrics.get("cache_hit_rate", 0),
+                "requests_total": metrics.get("requests_total", 0),
+            }
+    except Exception:
+        pass
+    return {}
 
 SYSTEM_PROMPT = """You are a helpful coding assistant with direct access to the user's local filesystem.
 You can read files, write files, run shell commands, list directories, and search code.
@@ -208,6 +231,7 @@ class Agent:
         session_id: Optional[str] = None,
         resume: bool = False,
     ):
+        self.base_url = base_url
         self.client = OpenAI(
             base_url=base_url,
             api_key=api_key or "dummy",
@@ -269,6 +293,35 @@ class Agent:
     def get_usage_summary(self) -> str:
         """Get formatted usage summary."""
         return _format_usage(self.usage, self.model)
+    
+    def get_proxy_savings(self) -> str:
+        """Get proxy token savings summary."""
+        savings = _fetch_proxy_savings(self.base_url)
+        if not savings:
+            return "[dim]Proxy savings: Unable to fetch metrics[/dim]"
+        
+        saved = savings.get("tokens_saved", 0)
+        cache_hits = savings.get("cache_hits", 0)
+        cache_rate = savings.get("cache_hit_rate", 0)
+        upstream = savings.get("upstream_tokens", 0)
+        downstream = savings.get("downstream_tokens", 0)
+        
+        if saved == 0 and cache_hits == 0:
+            return "[dim]Proxy savings: No data yet[/dim]"
+        
+        # Calculate cost savings (~$2 per 1M tokens saved)
+        saved_cost = (saved / 1_000_000) * 2.0
+        
+        parts = []
+        if saved > 0:
+            parts.append(f"{saved:,} tokens filtered")
+        if cache_hits > 0:
+            parts.append(f"{cache_hits} cached")
+        if cache_rate > 0:
+            parts.append(f"{cache_rate:.0%} cache hit")
+        
+        summary = " | ".join(parts) if parts else "No savings yet"
+        return f"[dim green]Proxy saved: {summary} (~${saved_cost:.2f})[/dim green]"
     
     def chat(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})

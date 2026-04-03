@@ -106,10 +106,12 @@ def run(
         reply = agent.chat(prompt)
         console.print(Markdown(reply))
         console.print(agent.get_usage_summary())
+        console.print(agent.get_proxy_savings())
         return
 
     # Show welcome panel with usage info
     usage_str = agent.get_usage_summary()
+    savings_str = agent.get_proxy_savings()
     
     # Format session ID more nicely
     session_short = agent.session_id[:20]
@@ -120,7 +122,8 @@ def run(
         f"[dim]Workspace:[/dim] {os.getcwd()}\n"
         f"[dim]Session:[/dim] {session_short}...\n"
         f"{usage_str}\n"
-        f"[dim]Commands:[/dim] [bold]'exit'[/bold] to quit, [bold]'help'[/bold] for usage info",
+        f"{savings_str}\n"
+        f"[dim]Commands:[/dim] Type [bold]'/help'[/bold] for available commands",
         title="Welcome",
     ))
 
@@ -133,36 +136,43 @@ def run(
 
         user_input = user_input.strip()
         
-        # Handle special commands
-        if user_input.lower() in ("exit", "quit"):
+        # Handle /commands
+        if user_input.lower() == "/exit" or user_input.lower() == "/quit":
             console.print("[dim]Session saved. Goodbye.[/dim]")
             break
-        elif user_input.lower() == "help":
+        elif user_input.lower() == "/help":
             console.print(Panel.fit(
-                "[bold cyan]Usage Information[/bold cyan]\n\n"
-                "[bold]Token Display:[/bold]\n"
-                "  • [dim]Usage: 1,234 tokens total (1,000 in / 234 out)[/dim]\n"
-                "    - Total: Sum of all tokens sent and received\n"
-                "    - In: Tokens sent to the AI (your messages + context)\n" 
-                "    - Out: Tokens received from the AI (responses)\n\n"
-                "[bold]Cost Display:[/bold]\n"
-                "  • [dim]Cost: ~12¢[/dim] or [dim]Cost: $1.23[/dim]\n"
-                "    - Based on model pricing per million tokens\n"
-                "    - Kimi: ~$0.50/M input, $2.00/M output\n\n"
-                "[bold]Commands:[/bold]\n"
-                "  • [bold]exit[/bold] or [bold]quit[/bold] - Save and exit\n"
-                "  • [bold]help[/bold] - Show this help\n"
-                "  • [bold]usage[/bold] - Show current session usage\n\n"
+                "[bold cyan]Available Commands[/bold cyan]\n\n"
+                "[bold]Session Commands:[/bold]\n"
+                "  [cyan]/exit[/cyan], [cyan]/quit[/cyan]  - Save session and exit\n"
+                "  [cyan]/usage[/cyan]          - Show current session token usage\n"
+                "  [cyan]/savings[/cyan]         - Show proxy savings (filtering/caching)\n"
+                "  [cyan]/help[/cyan]            - Show this help message\n\n"
+                "[bold]Usage Display:[/bold]\n"
+                "  [dim]Usage: 1,234 tokens total (1,000 in / 234 out) | Cost: ~12¢[/dim]\n"
+                "    - [bold]in:[/bold] Tokens sent to AI (your messages + context)\n"
+                "    - [bold]out:[/bold] Tokens received from AI (responses)\n"
+                "    - [bold]Cost:[/bold] Estimated based on model pricing\n\n"
+                "[bold]Proxy Savings:[/bold]\n"
+                "  Shows tokens saved by the proxy through:\n"
+                "    - Filtering (removing duplicates, truncation)\n"
+                "    - Caching (avoiding duplicate API calls)\n\n"
                 "[bold]Session Management:[/bold]\n"
-                "  Sessions are auto-saved and isolated per project\n"
-                "  Resume with: ./llmproxy.sh agent --resume",
+                "  Sessions auto-save and are isolated per project.\n"
+                "  Resume later with: [cyan]./llmproxy.sh agent --resume[/cyan]",
                 title="Help"
             ))
             continue
-        elif user_input.lower() == "usage":
+        elif user_input.lower() == "/usage":
             console.print(agent.get_usage_summary())
             continue
+        elif user_input.lower() == "/savings":
+            console.print(agent.get_proxy_savings())
+            continue
         elif not user_input:
+            continue
+        elif user_input.startswith("/"):
+            console.print(f"[dim]Unknown command: {user_input}. Type /help for available commands.[/dim]")
             continue
 
         with console.status("[bold green]Thinking...[/bold green]"):
@@ -170,6 +180,7 @@ def run(
 
         console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
         console.print(agent.get_usage_summary())
+        console.print(agent.get_proxy_savings())
 
 
 if __name__ == "__main__":
