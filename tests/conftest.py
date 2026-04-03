@@ -7,6 +7,7 @@ import pytest
 def client():
     """Create a test client for the FastAPI app."""
     from fastapi.testclient import TestClient
+
     from llmproxy.server import app
     return TestClient(app)
 

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 """Storage backends for LLM Proxy cache."""
 
+from typing import Any
+
 from .base import StorageBackend
 from .memory import MemoryBackend
-from typing import Any
 
 __all__ = ["StorageBackend", "MemoryBackend"]
 

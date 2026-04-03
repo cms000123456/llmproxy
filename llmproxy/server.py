@@ -29,7 +29,8 @@ from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
 from .middleware.sanitize import SanitizationMiddleware
 from .storage import create_backend
-from .tracing import setup_tracing, get_tracer, trace_operation
+from .tracing import get_tracer, setup_tracing
+
 
 # Cache key generation
 def _make_cache_key(payload: dict) -> str:
@@ -373,25 +374,25 @@ def _get_ab_test_variant(api_key: str | None) -> str:
     """
     if not settings.ab_test_enabled:
         return "control"
-    
+
     if _experimental_http_client is None:
         return "control"
-    
+
     # Use API key for sticky sessions, or "anonymous" if no key
     session_key = api_key or "anonymous"
-    
+
     # Check if we already assigned a variant to this session
     if settings.ab_test_sticky_sessions and session_key in _ab_test_variants:
         return _ab_test_variants[session_key]
-    
+
     # Assign variant based on traffic split
     import random
     variant = "experimental" if random.random() < settings.ab_test_traffic_split else "control"
-    
+
     # Store for sticky sessions
     if settings.ab_test_sticky_sessions:
         _ab_test_variants[session_key] = variant
-    
+
     return variant
 
 
@@ -764,7 +765,7 @@ async def proxy(request: Request, path: str):
             span.set_attribute("ab_test.variant", ab_variant)
             span.set_attribute("ab_test.enabled", True)
             span.end()
-    
+
     # Select HTTP client based on A/B test variant
     upstream_http_client = _http_client
     if ab_variant == "experimental" and _experimental_http_client is not None:

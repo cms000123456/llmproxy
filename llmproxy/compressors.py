@@ -3,9 +3,8 @@ from __future__ import annotations
 """Prompt compression strategies to fit within token budgets."""
 
 import json
-from typing import Any
-
 from types import ModuleType
+from typing import Any
 
 tiktoken: ModuleType | None = None
 try:

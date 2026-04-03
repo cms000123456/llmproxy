@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestTracingSetup:
     """Tests for tracing setup."""
@@ -78,7 +76,7 @@ class TestTraceOperation:
 
     def test_trace_operation_basic(self):
         """Should create tracing context for operation."""
-        from llmproxy.tracing import trace_operation, get_tracer
+        from llmproxy.tracing import get_tracer, trace_operation
 
         tracer = get_tracer("test")
 
@@ -87,7 +85,7 @@ class TestTraceOperation:
 
     def test_trace_operation_with_model(self):
         """Should include model in attributes."""
-        from llmproxy.tracing import trace_operation, get_tracer
+        from llmproxy.tracing import get_tracer, trace_operation
 
         tracer = get_tracer("test")
 
@@ -96,7 +94,7 @@ class TestTraceOperation:
 
     def test_trace_operation_with_extra_attributes(self):
         """Should include extra attributes."""
-        from llmproxy.tracing import trace_operation, get_tracer
+        from llmproxy.tracing import get_tracer, trace_operation
 
         tracer = get_tracer("test")
 
