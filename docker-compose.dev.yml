@@ -135,6 +135,20 @@ services:
     depends_on:
       - prometheus
 
+  # Dashboard - React web UI
+  dashboard:
+    image: nginx:alpine
+    container_name: dashboard-dev
+    ports:
+      - "3000:80"
+    volumes:
+      - ./dashboard/public:/usr/share/nginx/html:ro
+    networks:
+      - llmproxy-dev-net
+    restart: unless-stopped
+    depends_on:
+      - llmproxy
+
 networks:
   llmproxy-dev-net:
     driver: bridge
