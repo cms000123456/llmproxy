@@ -729,9 +729,21 @@ async def proxy(request: Request, path: str):
         original_token_count = count_message_tokens(messages, payload.get("model", "gpt-4"))
 
         # 1. Filter
-        messages = filter_messages(messages, settings)
+        if _tracer:
+            with _tracer.start_span("filter_messages") as span:
+                span.set_attribute("message_count", len(messages))
+                messages = filter_messages(messages, settings)
+                span.set_attribute("filtered_count", len(messages))
+        else:
+            messages = filter_messages(messages, settings)
         # 2. Compress
-        messages = compress_messages(messages, settings, payload.get("model", "gpt-4"))
+        if _tracer:
+            with _tracer.start_span("compress_messages") as span:
+                span.set_attribute("message_count", len(messages))
+                messages = compress_messages(messages, settings, payload.get("model", "gpt-4"))
+                span.set_attribute("compressed_count", len(messages))
+        else:
+            messages = compress_messages(messages, settings, payload.get("model", "gpt-4"))
 
         transformed_payload["messages"] = messages
 
@@ -785,7 +797,14 @@ async def proxy(request: Request, path: str):
     # Cache lookup
     cached = None
     if is_chat_completion and settings.enable_cache and _cache is not None:
-        cached = _cache.get(_make_cache_key(transformed_payload))
+        if _tracer:
+            with _tracer.start_span("cache_lookup") as span:
+                cache_key = _make_cache_key(transformed_payload)
+                span.set_attribute("cache_key", cache_key[:16] + "...")
+                cached = _cache.get(cache_key)
+                span.set_attribute("cache_hit", cached is not None)
+        else:
+            cached = _cache.get(_make_cache_key(transformed_payload))
 
     start = time.perf_counter()
 
@@ -825,17 +844,35 @@ async def proxy(request: Request, path: str):
         return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
 
     try:
-        upstream_response = await _upstream_request_with_retry(
-            http_client=_http_client,
-            method=method,
-            url=f"/{path}",
-            headers=headers,
-            json_payload=transformed_payload if transformed_payload else None,
-            content=body_bytes if not transformed_payload else None,
-            max_retries=settings.max_retries,
-            backoff_base=settings.retry_backoff,
-            max_wait=settings.retry_max_wait,
-        )
+        if _tracer:
+            with _tracer.start_span("upstream_request") as span:
+                span.set_attribute("http.method", method)
+                span.set_attribute("http.url", f"/{path}")
+                span.set_attribute("retry.max", settings.max_retries)
+                upstream_response = await _upstream_request_with_retry(
+                    http_client=_http_client,
+                    method=method,
+                    url=f"/{path}",
+                    headers=headers,
+                    json_payload=transformed_payload if transformed_payload else None,
+                    content=body_bytes if not transformed_payload else None,
+                    max_retries=settings.max_retries,
+                    backoff_base=settings.retry_backoff,
+                    max_wait=settings.retry_max_wait,
+                )
+                span.set_attribute("http.status_code", upstream_response.status_code)
+        else:
+            upstream_response = await _upstream_request_with_retry(
+                http_client=_http_client,
+                method=method,
+                url=f"/{path}",
+                headers=headers,
+                json_payload=transformed_payload if transformed_payload else None,
+                content=body_bytes if not transformed_payload else None,
+                max_retries=settings.max_retries,
+                backoff_base=settings.retry_backoff,
+                max_wait=settings.retry_max_wait,
+            )
     except httpx.TimeoutException:
         return JSONResponse(status_code=504, content={"error": "Upstream timeout after retries"})
     except httpx.ConnectError:
