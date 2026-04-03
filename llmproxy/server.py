@@ -16,6 +16,7 @@ from .cache import LRUCache
 from .metrics import METRICS
 from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
+from .middleware.sanitize import SanitizationMiddleware
 
 
 # Maximum request body size (10MB)
@@ -116,10 +117,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LLM Proxy", version="0.1.0", lifespan=lifespan)
 
-# Add security middleware
+# Add security middleware (order matters - sanitize before other processing)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SanitizationMiddleware, enabled=True)
 
 
 @app.get("/health")
@@ -187,61 +189,67 @@ async def proxy(request: Request, path: str):
     start = time.perf_counter()
 
     if cached is not None:
-        latency_ms = (time.perf_counter() - start) * 1000
-        downstream_tokens = count_message_tokens(transformed_payload.get("messages", []), transformed_payload.get("model", "gpt-4"))
+        response_data = cached
+        # Recreate the response structure to match upstream format
+        response_body = json.dumps(response_data).encode("utf-8")
+        cached_latency = (time.perf_counter() - start) * 1000
         METRICS.record_request(
             upstream_tokens=original_token_count,
-            downstream_tokens=downstream_tokens,
-            latency_ms=latency_ms,
-            cached=True,
+            downstream_tokens=count_message_tokens(
+                response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
+                payload.get("model", "gpt-4")
+            ),
+            latency_ms=cached_latency,
+            cached=True
         )
-        return JSONResponse(content=cached)
+        return Response(
+            content=response_body,
+            status_code=200,
+            headers={"Content-Type": "application/json", "X-Cache": "HIT"}
+        )
 
-    # Proxy to upstream
-    # Prevent compression to avoid decompression issues on the client side
-    headers["accept-encoding"] = "identity"
+    # Upstream request
     try:
-        resp = await _http_client.request(
+        upstream_resp = await _http_client.request(
             method=method,
             url=f"/{path}",
             headers=headers,
-            content=json.dumps(transformed_payload).encode("utf-8") if transformed_payload else body_bytes,
-            params=request.query_params,
+            json=transformed_payload if payload else None,
         )
-    except httpx.HTTPError as exc:
+        upstream_resp.raise_for_status()
+        response_data = upstream_resp.json()
+    except httpx.HTTPStatusError as e:
         METRICS.record_error()
-        return JSONResponse(status_code=502, content={"error": str(exc)})
+        return JSONResponse(
+            status_code=e.response.status_code,
+            content={"error": f"Upstream error: {e.response.text}"}
+        )
+    except Exception as e:
+        METRICS.record_error()
+        return JSONResponse(
+            status_code=502,
+            content={"error": f"Proxy error: {str(e)}"}
+        )
 
+    # Record metrics
     latency_ms = (time.perf_counter() - start) * 1000
-    downstream_tokens = count_message_tokens(transformed_payload.get("messages", []), transformed_payload.get("model", "gpt-4"))
+    downstream_messages = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    downstream_tokens = count_message_tokens(downstream_messages, payload.get("model", "gpt-4"))
+
     METRICS.record_request(
         upstream_tokens=original_token_count,
         downstream_tokens=downstream_tokens,
         latency_ms=latency_ms,
-        cached=False,
+        cached=False
     )
 
-    content_type = resp.headers.get("content-type", "application/json")
+    # Cache the response
+    if is_chat_completion and settings.enable_cache and _cache is not None:
+        _cache.set(transformed_payload, response_data)
 
-    # Clean hop-by-hop headers because httpx already decompresses resp.content/aiter_bytes
-    response_headers = dict(resp.headers)
-    for hop_header in ("content-encoding", "transfer-encoding", "content-length"):
-        response_headers.pop(hop_header, None)
-        response_headers.pop(hop_header.title(), None)
-
-    # Cache store for non-streaming responses
-    if is_chat_completion and settings.enable_cache and _cache is not None and resp.status_code == 200:
-        if "text/event-stream" not in content_type:
-            try:
-                response_json = resp.json()
-                _cache.set(transformed_payload, response_json)
-            except Exception:
-                pass
-
-    if "text/event-stream" in content_type:
-        async def stream_generator():
-            async for chunk in resp.aiter_bytes():
-                yield chunk
-        return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=response_headers)
-
-    return Response(content=resp.content, status_code=resp.status_code, headers=response_headers)
+    response_body = json.dumps(response_data).encode("utf-8")
+    return Response(
+        content=response_body,
+        status_code=upstream_resp.status_code,
+        headers={"Content-Type": "application/json", "X-Cache": "MISS"}
+    )
