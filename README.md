@@ -240,6 +240,9 @@ python benchmark.py http://localhost:8080
 | `LLM_PROXY_ENABLE_CACHE` | `true` | Enable response caching |
 | `LLM_PROXY_CACHE_TTL_SECONDS` | `300` | Cache entry TTL |
 | `LLM_PROXY_CACHE_MAX_SIZE` | `1000` | Max cached entries |
+| `LLM_PROXY_CACHE_BACKEND` | `memory` | Cache backend: `memory` or `redis` |
+| `LLM_PROXY_REDIS_URL` | `redis://localhost:6379` | Redis URL (when backend=redis) |
+| `LLM_PROXY_REDIS_KEY_PREFIX` | `llmproxy:` | Redis key prefix |
 | `LLM_PROXY_OLLAMA_BASE_URL` | `http://localhost:11434` | Local Ollama instance URL |
 | `LLM_PROXY_OLLAMA_API_KEY` | `''` | Optional API key for Ollama (if behind auth proxy) |
 | `LLM_PROXY_OLLAMA_MODEL` | `llama3.2` | Model name for local grunt work |
