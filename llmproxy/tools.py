@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Tool implementations for the coding agent CLI."""
 
 import fnmatch

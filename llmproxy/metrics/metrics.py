@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Lightweight metrics tracking."""
 
 from dataclasses import dataclass, field
@@ -23,7 +25,7 @@ class Metrics:
         latency_ms: float,
         cached: bool = False,
         tokens_saved_filtering: int = 0,
-    ):
+    ) -> None:
         """Record request metrics.
 
         Args:
@@ -47,11 +49,11 @@ class Metrics:
             else:
                 self.cache_misses += 1
 
-    def record_error(self):
+    def record_error(self) -> None:
         with self._lock:
             self.errors_total += 1
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, float | int]:
         with self._lock:
             avg_latency = sum(self.latencies) / len(self.latencies) if self.latencies else 0.0
             return {

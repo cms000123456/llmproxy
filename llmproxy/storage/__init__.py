@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Storage backends for LLM Proxy cache."""
 
 from .base import StorageBackend

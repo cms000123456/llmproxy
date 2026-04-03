@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Prompt template engine with variable substitution."""
 
 import re
@@ -127,8 +129,12 @@ What could be causing this and how can I fix it?""",
             variables.extend(self._extract_variables(system_prompt))
 
         # Remove duplicates while preserving order
-        seen = set()
-        unique_vars = [v for v in variables if not (v in seen or seen.add(v))]
+        seen: set[str] = set()
+        unique_vars: list[str] = []
+        for v in variables:
+            if v not in seen:
+                seen.add(v)
+                unique_vars.append(v)
 
         return Template(
             name=name,
@@ -246,7 +252,7 @@ class TemplateNotFoundError(Exception):
 _template_engine: Optional[TemplateEngine] = None
 
 
-def init_template_engine(custom_templates: Optional[Dict[str, Dict[str, Any]]] = None):
+def init_template_engine(custom_templates: Optional[Dict[str, Dict[str, Any]]] = None) -> TemplateEngine:
     """Initialize the global template engine."""
     global _template_engine
     _template_engine = TemplateEngine(custom_templates)

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Simple in-memory LRU cache for LLM responses."""
 
 import hashlib

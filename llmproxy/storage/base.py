@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Abstract base class for storage backends."""
 
 from abc import ABC, abstractmethod

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """FastAPI server that proxies requests to an upstream LLM API with filtering, compression, and caching."""
 
 import asyncio

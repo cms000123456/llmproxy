@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """In-memory LRU cache storage backend."""
 
 import time

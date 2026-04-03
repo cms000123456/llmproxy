@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Prompt compression strategies to fit within token budgets."""
 
 import json

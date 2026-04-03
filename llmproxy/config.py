@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Configuration for LLM Proxy."""
 
 from typing import Any, Dict, List

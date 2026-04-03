@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Request/Response sanitization middleware for PII and sensitive data."""
 
 import json

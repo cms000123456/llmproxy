@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Redis storage backend for distributed caching."""
 
 import json

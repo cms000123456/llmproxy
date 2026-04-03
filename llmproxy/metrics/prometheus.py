@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Prometheus metrics exporter for LLM Proxy.
 
 Exports metrics in Prometheus text format for scraping by Prometheus server.

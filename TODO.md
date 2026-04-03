@@ -80,7 +80,6 @@
   - **Config:** Add `log_format: str = "console"` (console or json)
   - **Time Estimate:** 4 hours
   - **Note:** Completed 2025-01-15
-  - **Note:** Completed 2025-01-15
 
 - [x] ~~**TODO-011:**~~ Add Prometheus metrics endpoint
   - **File:** `llmproxy/metrics/prometheus.py` (new)
@@ -109,6 +108,7 @@
   - **File:** Modify `llmproxy/server.py`
   - **Config:** Add `experimental_upstream_url`, `traffic_split`
   - **Time Estimate:** 1 day
+  - **Note:** Implemented 2025-01-15 - requires testing
 
 - [ ] **TODO-014:** Add distributed tracing (OpenTelemetry)
   - **File:** `llmproxy/tracing.py` (new)
@@ -134,12 +134,27 @@
   - **Time Estimate:** 2 hours
   - **Note:** Completed 2025-01-15
 
+### Code Quality
+- [x] ~~**TODO-017:**~~ Add linting with Ruff
+  - **File:** `pyproject.toml` - Ruff configuration
+  - **Features:** Auto-formatting, import sorting, code style enforcement
+  - **Time Estimate:** 2 hours
+  - **Note:** Completed 2025-04-03
+
+- [ ] **TODO-018:** Add type checking with mypy
+  - **File:** `pyproject.toml` - mypy configuration
+  - **Features:** Static type checking, gradual migration strategy
+  - **Time Estimate:** 2-3 hours
+  - **Status:** In progress - basic setup complete, ~50 errors remaining
+  - **Note:** Added `scripts/typecheck.sh` for running mypy
+
 ---
 
 ## ✅ Recently Completed
 
 | TODO | Description | Date Completed |
 |------|-------------|----------------|
+| TODO-017 | Linting with Ruff (1000+ issues fixed, full codebase reformatted) | 2025-04-03 |
 | TODO-016 | Docker-compose dev stack (Redis, Jaeger, Prometheus, Grafana) | 2025-01-15 |
 | TODO-015 | Development stack documentation in HOWTO.md | 2025-01-15 |
 | TODO-012 | Prompt templates with variables | 2025-01-15 |

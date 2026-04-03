@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 """Lightweight async client for a local Ollama instance."""
 
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -19,7 +21,7 @@ class OllamaClient:
         self.api_key = api_key
 
         # Setup headers with optional auth
-        headers = {}
+        headers: dict[str, str] = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
@@ -33,7 +35,7 @@ class OllamaClient:
         stream: bool = False,
         options: Optional[dict] = None,
     ) -> str:
-        payload = {
+        payload: dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "stream": stream,
@@ -48,8 +50,9 @@ class OllamaClient:
             json=payload,
         )
         resp.raise_for_status()
-        data = resp.json()
-        return data.get("response", "").strip()
+        data: dict[str, Any] = resp.json()
+        response_text = data.get("response", "")
+        return str(response_text).strip() if response_text else ""
 
     async def chat(
         self,
@@ -58,7 +61,7 @@ class OllamaClient:
         stream: bool = False,
         options: Optional[dict] = None,
     ) -> str:
-        payload = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": stream,
@@ -71,14 +74,17 @@ class OllamaClient:
             json=payload,
         )
         resp.raise_for_status()
-        data = resp.json()
-        return data.get("message", {}).get("content", "").strip()
+        data: dict[str, Any] = resp.json()
+        message = data.get("message", {})
+        content = message.get("content", "") if isinstance(message, dict) else ""
+        return str(content).strip() if content else ""
 
     async def list_models(self) -> list[str]:
         resp = await self._client.get(f"{self.base_url}/api/tags")
         resp.raise_for_status()
-        data = resp.json()
-        return [m["name"] for m in data.get("models", [])]
+        data: dict[str, Any] = resp.json()
+        models = data.get("models", [])
+        return [str(m["name"]) for m in models if isinstance(m, dict) and "name" in m]
 
     async def is_available(self) -> bool:
         try:
@@ -87,5 +93,5 @@ class OllamaClient:
         except Exception:
             return False
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         await self._client.aclose()

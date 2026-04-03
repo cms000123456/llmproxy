@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Per-API-key cost tracking and budget management."""
 
 import json

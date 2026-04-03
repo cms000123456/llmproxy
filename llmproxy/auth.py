@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 """API Key authentication middleware for LLM Proxy."""
 
 import secrets
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -9,6 +11,9 @@ from starlette.responses import JSONResponse
 
 from .config import settings
 from .logging_config import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = get_logger(__name__)
 
@@ -23,7 +28,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     If no api_keys are configured, all requests are allowed (open mode).
     """
 
-    def __init__(self, app, enabled: bool = True):
+    def __init__(self, app: Any, enabled: bool = True) -> None:  # noqa: ANN401
         super().__init__(app)
         self.enabled = enabled
         self.api_keys = set(settings.api_keys) if settings.api_keys else set()
@@ -33,7 +38,9 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
         else:
             logger.warning("API key authentication disabled - no keys configured (open mode)")
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Any]]
+    ) -> Any:
         # Skip authentication if disabled or no keys configured
         if not self.enabled or not self.api_keys:
             return await call_next(request)
@@ -63,7 +70,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
             )
 
         # Add authenticated client info to request state
-        request.state.api_key = api_key[:8] + "..." if len(api_key) > 8 else api_key
+        request.state.api_key = api_key[:8] + "..." if len(api_key) > 8 else api_key  # type: ignore[attr-defined]
 
         return await call_next(request)
 
@@ -150,4 +157,4 @@ class APIKeyManager:
     @staticmethod
     def get_client_id(request: Request) -> Optional[str]:
         """Get the authenticated client ID (API key prefix) for the request."""
-        return getattr(request.state, "api_key", None)
+        return getattr(request.state, "api_key", None)  # type: ignore[return-value]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Request filtering strategies."""
 
 import base64
