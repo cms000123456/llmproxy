@@ -91,7 +91,7 @@ def run(
         help="List saved sessions for this project",
     ),
     confirm: bool = typer.Option(
-        True,
+        False,
         "--confirm/--no-confirm",
         help="Ask for confirmation before executing tasks",
     ),

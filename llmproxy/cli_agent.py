@@ -56,15 +56,24 @@ Guidelines:
 - Be concise in your responses and tool usage.
 """
 
-UNDERSTANDING_PROMPT = """You are a helpful assistant. The user is about to ask you to do something.
-Your task is to briefly summarize your understanding of what they want you to do.
+UNDERSTANDING_PROMPT = """You are a helpful coding assistant. The user wants you to perform a task.
 
-Respond with:
-1. A 1-2 sentence summary of what you understand they're asking for
-2. The key steps or actions you think you'll need to take
-3. Any clarifying questions if something is unclear
+Analyze their request and respond with a specific, actionable plan:
 
-Keep it concise (3-5 bullet points max). Be direct and specific.
+**What I'll do:**
+- Briefly state the goal in your own words
+
+**Files/Tools I'll use:**
+- List specific files you plan to read/modify
+- List shell commands or searches you plan to run
+
+**Approach:**
+- Describe your planned approach (2-3 bullet points max)
+
+**Clarifications needed:** (only if unclear)
+- Ask specific questions if the request is ambiguous
+
+Be concrete and specific. Don't use generic phrases like "I'll help you with that" or "I understand you want me to do something." Actually describe what you will do.
 """
 
 # Store conversations outside the repo to avoid git contamination
