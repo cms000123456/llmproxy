@@ -110,14 +110,17 @@ def run(
 
     # Show welcome panel with usage info
     usage_str = agent.get_usage_summary()
+    
+    # Format session ID more nicely
+    session_short = agent.session_id[:20]
+    
     console.print(Panel.fit(
         f"[bold green]Coding Agent[/bold green]\n"
-        f"Model: {model}\n"
-        f"Base URL: {base_url}\n"
-        f"Workspace: {os.getcwd()}\n"
-        f"Session: {agent.session_id[:24]}...\n"
+        f"[dim]Model:[/dim] {model}\n"
+        f"[dim]Workspace:[/dim] {os.getcwd()}\n"
+        f"[dim]Session:[/dim] {session_short}...\n"
         f"{usage_str}\n"
-        f"Type [bold]'exit'[/bold] or [bold]'quit'[/bold] to leave.",
+        f"[dim]Commands:[/dim] [bold]'exit'[/bold] to quit, [bold]'help'[/bold] for usage info",
         title="Welcome",
     ))
 
@@ -129,10 +132,37 @@ def run(
             break
 
         user_input = user_input.strip()
+        
+        # Handle special commands
         if user_input.lower() in ("exit", "quit"):
             console.print("[dim]Session saved. Goodbye.[/dim]")
             break
-        if not user_input:
+        elif user_input.lower() == "help":
+            console.print(Panel.fit(
+                "[bold cyan]Usage Information[/bold cyan]\n\n"
+                "[bold]Token Display:[/bold]\n"
+                "  • [dim]Usage: 1,234 tokens total (1,000 in / 234 out)[/dim]\n"
+                "    - Total: Sum of all tokens sent and received\n"
+                "    - In: Tokens sent to the AI (your messages + context)\n" 
+                "    - Out: Tokens received from the AI (responses)\n\n"
+                "[bold]Cost Display:[/bold]\n"
+                "  • [dim]Cost: ~12¢[/dim] or [dim]Cost: $1.23[/dim]\n"
+                "    - Based on model pricing per million tokens\n"
+                "    - Kimi: ~$0.50/M input, $2.00/M output\n\n"
+                "[bold]Commands:[/bold]\n"
+                "  • [bold]exit[/bold] or [bold]quit[/bold] - Save and exit\n"
+                "  • [bold]help[/bold] - Show this help\n"
+                "  • [bold]usage[/bold] - Show current session usage\n\n"
+                "[bold]Session Management:[/bold]\n"
+                "  Sessions are auto-saved and isolated per project\n"
+                "  Resume with: ./llmproxy.sh agent --resume",
+                title="Help"
+            ))
+            continue
+        elif user_input.lower() == "usage":
+            console.print(agent.get_usage_summary())
+            continue
+        elif not user_input:
             continue
 
         with console.status("[bold green]Thinking...[/bold green]"):

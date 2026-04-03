@@ -184,10 +184,18 @@ def _format_usage(usage: dict, model: str) -> str:
     output_cost = (completion_tokens / 1_000_000) * pricing["output"]
     total_cost = input_cost + output_cost
     
+    # Format cost to be readable (show cents for small amounts, dollars for larger)
+    if total_cost < 0.01:
+        cost_str = f"${total_cost:.4f}"
+    elif total_cost < 1.0:
+        cost_str = f"~{int(total_cost * 100)}¢"
+    else:
+        cost_str = f"${total_cost:.2f}"
+    
     return (
-        f"[dim]Tokens: {total_tokens:,} "
-        f"(↑{prompt_tokens:,} ↓{completion_tokens:,}) "
-        f"| Est. cost: ${total_cost:.4f}[/dim]"
+        f"[dim]Usage: {total_tokens:,} tokens total "
+        f"({prompt_tokens:,} in / {completion_tokens:,} out) "
+        f"| Cost: {cost_str}[/dim]"
     )
 
 
