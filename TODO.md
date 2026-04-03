@@ -66,7 +66,7 @@
   - **Depends on:** TODO-007
 
 ### Cost Management
-- [ ] **TODO-009:** Add per-API-key cost tracking
+- [x] ~~**TODO-009:**~~ Add per-API-key cost tracking
   - **File:** `llmproxy/cost_tracker.py` (new)
   - **Features:** Track spending, set budgets, alerts
   - **Time Estimate:** 1 day

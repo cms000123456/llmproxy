@@ -1,0 +1,21 @@
+{
+  "stats": {
+    "542c6774b28ab746": {
+      "api_key": "542c6774b28ab746",
+      "requests_total": 1,
+      "tokens_upstream": 1000,
+      "tokens_downstream": 500,
+      "estimated_cost": 0.025,
+      "first_seen": 1775241566.784089,
+      "last_used": 1775241566.7840903
+    }
+  },
+  "budgets": {
+    "542c6774b28ab746": 0.001
+  },
+  "pricing": {
+    "upstream": 0.01,
+    "downstream": 0.03
+  },
+  "saved_at": 1775241566.7840939
+}

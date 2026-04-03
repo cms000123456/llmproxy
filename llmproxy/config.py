@@ -65,5 +65,14 @@ class Settings(BaseSettings):
     class Config:
         env_prefix = "LLM_PROXY_"
 
+    # Cost tracking
+    enable_cost_tracking: bool = True
+    cost_upstream_price: float = 0.01   # $ per 1K tokens
+    cost_downstream_price: float = 0.03  # $ per 1K tokens
+    cost_storage_path: str = "data/cost_tracker.json"
+
+    class Config:
+        env_prefix = "LLM_PROXY_"
+
 
 settings = Settings()

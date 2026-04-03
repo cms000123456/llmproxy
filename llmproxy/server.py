@@ -24,6 +24,7 @@ from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
 from .middleware.sanitize import SanitizationMiddleware
 from .auth import APIKeyAuthMiddleware, APIKeyManager
+from .cost_tracker import COST_TRACKER, record_api_key_usage, check_budget
 
 
 # Cache key generation
@@ -459,6 +460,13 @@ async def metrics_endpoint():
     cache_stats = _cache.stats() if _cache else {}
     return {"metrics": summary, "cache": cache_stats}
 
+@app.get("/costs")
+async def costs_endpoint():
+    """Get cost tracking statistics."""
+    summary = COST_TRACKER.get_summary()
+    details = COST_TRACKER.get_stats()
+    return {"summary": summary, "details": details}
+
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy(request: Request, path: str):
@@ -481,10 +489,44 @@ async def proxy(request: Request, path: str):
             if settings.upstream_api_key:
                 headers["authorization"] = f"Bearer {settings.upstream_api_key}"
         # else: forward client's key to upstream
+    # Extract client API key for cost tracking
+    client_api_key = None
+    if auth_header.startswith("Bearer "):
+        provided = auth_header[7:].strip()
+        if provided in api_keys_set:
+            client_api_key = provided
+    
+    # Check budget before processing
+    if client_api_key and settings.enable_cost_tracking:
+        if not check_budget(client_api_key):
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Budget exceeded",
+                    "message": "This API key has exceeded its budget. Contact administrator."
+                }
+            )
     elif settings.upstream_api_key:
         # No auth header, use upstream key
         headers["authorization"] = f"Bearer {settings.upstream_api_key}"
     # else: forward client's key to upstream
+    # Extract client API key for cost tracking
+    client_api_key = None
+    if auth_header.startswith("Bearer "):
+        provided = auth_header[7:].strip()
+        if provided in api_keys_set:
+            client_api_key = provided
+    
+    # Check budget before processing
+    if client_api_key and settings.enable_cost_tracking:
+        if not check_budget(client_api_key):
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Budget exceeded",
+                    "message": "This API key has exceeded its budget. Contact administrator."
+                }
+            )
 
     # Kimi Code compatibility: inject agent headers and strip client fingerprints
     if settings.kimi_code_compat:
@@ -580,6 +622,16 @@ async def proxy(request: Request, path: str):
             cached=True,
             latency_ms=cached_latency
         )
+        # Track cost per API key
+        if client_api_key and settings.enable_cost_tracking:
+            record_api_key_usage(
+                client_api_key,
+                upstream_tokens=original_token_count,
+                downstream_tokens=count_message_tokens(
+                    response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
+                    payload.get("model", "gpt-4")
+                )
+            )
         return Response(
             content=response_body,
             status_code=200,
@@ -634,6 +686,13 @@ async def proxy(request: Request, path: str):
         cached=False,
         latency_ms=latency
     )
+    # Track cost per API key
+    if client_api_key and settings.enable_cost_tracking:
+        record_api_key_usage(
+            client_api_key,
+            upstream_tokens=original_token_count,
+            downstream_tokens=downstream_tokens
+        )
 
     # Forward all response headers except encoding/length (we're sending raw content)
     response_headers = dict(upstream_response.headers)
