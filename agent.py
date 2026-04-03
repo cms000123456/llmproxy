@@ -87,6 +87,11 @@ def run(
         "-l",
         help="List saved sessions for this project",
     ),
+    confirm: bool = typer.Option(
+        True,
+        "--confirm/--no-confirm",
+        help="Ask for confirmation before executing tasks",
+    ),
     prompt: str = typer.Argument("", help="Single prompt to run non-interactively"),
 ):
     # Handle list sessions
@@ -144,6 +149,8 @@ def run(
     # Format session ID more nicely
     session_short = agent.session_id[:20]
     
+    confirm_status = "[dim green]✓[/dim green] Confirm tasks" if confirm else "[dim yellow]⚡[/dim yellow] Auto-execute"
+    
     console.print(Panel.fit(
         f"[bold green]Coding Agent[/bold green]\n"
         f"[dim]Model:[/dim] {model}\n"
@@ -151,6 +158,7 @@ def run(
         f"[dim]Session:[/dim] {session_short}...\n"
         f"{usage_str}\n"
         f"{savings_str}\n"
+        f"{confirm_status}\n"
         f"[dim]Commands:[/dim] Type [bold]'/help'[/bold] for available commands",
         title="Welcome",
     ))
@@ -198,6 +206,9 @@ def run(
                 "  [cyan]/usage[/cyan]          - Show current session token usage\n"
                 "  [cyan]/savings[/cyan]         - Show proxy savings (filtering/caching)\n"
                 "  [cyan]/help[/cyan]            - Show this help message\n\n"
+                "[bold]Confirmation Mode:[/bold]\n"
+                "  The agent asks for confirmation before executing tasks.\n"
+                "  Disable with: [cyan]./llmproxy.sh agent --no-confirm[/cyan]\n\n"
                 "[bold]Keyboard Shortcuts:[/bold]\n"
                 "  [cyan]Ctrl+C[/cyan]            - Interrupt current chat\n"
                 "  [cyan]Ctrl+D[/cyan]            - Exit agent\n\n"
@@ -227,6 +238,37 @@ def run(
         elif user_input.startswith("/"):
             console.print(f"[dim]Unknown command: {user_input}. Type /help for available commands.[/dim]")
             continue
+
+        # Confirmation flow: agent states its understanding first
+        if confirm:
+            try:
+                with console.status("[bold blue]Understanding your request...[/bold blue]"):
+                    understanding = agent.get_understanding(user_input)
+                
+                console.print(Panel(
+                    Markdown(understanding),
+                    title="[bold yellow]My Understanding[/bold yellow]",
+                    border_style="yellow",
+                    subtitle="[dim]Press Enter to proceed, Ctrl+C to cancel[/dim]"
+                ))
+                
+                # Wait for user confirmation
+                try:
+                    confirm_input = pt_prompt("[Press Enter to proceed, or type to refine] > ")
+                except (EOFError, KeyboardInterrupt):
+                    console.print("\n[dim yellow]⏹ Cancelled.[/dim yellow]")
+                    continue
+                
+                # If user typed something, treat it as clarification/refinement
+                if confirm_input.strip():
+                    user_input = f"{user_input}\n\n[Clarification: {confirm_input.strip()}]"
+                    console.print("[dim]Proceeding with your clarification...[/dim]")
+                else:
+                    console.print("[dim]Proceeding...[/dim]")
+                    
+            except KeyboardInterrupt:
+                console.print("\n[dim yellow]⏹ Cancelled.[/dim yellow]")
+                continue
 
         try:
             with console.status("[bold green]Thinking...[/bold green]"):

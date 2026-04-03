@@ -54,6 +54,17 @@ Guidelines:
 - Be concise in your responses and tool usage.
 """
 
+UNDERSTANDING_PROMPT = """You are a helpful assistant. The user is about to ask you to do something.
+Your task is to briefly summarize your understanding of what they want you to do.
+
+Respond with:
+1. A 1-2 sentence summary of what you understand they're asking for
+2. The key steps or actions you think you'll need to take
+3. Any clarifying questions if something is unclear
+
+Keep it concise (3-5 bullet points max). Be direct and specific.
+"""
+
 # Store conversations outside the repo to avoid git contamination
 CONVERSATIONS_DIR = Path.home() / ".local" / "share" / "llmproxy" / "conversations"
 
@@ -98,222 +109,171 @@ def _list_sessions(project_id: str) -> list[dict]:
         try:
             data = json.loads(file_path.read_text())
             sessions.append({
-                "session_id": file_path.stem,
+                "session_id": data.get("session_id", file_path.stem),
                 "created": data.get("created", "Unknown"),
                 "updated": data.get("updated", "Unknown"),
-                "preview": data.get("preview", "No preview"),
                 "message_count": len(data.get("messages", [])),
-                "usage": data.get("usage", {"prompt_tokens": 0, "completion_tokens": 0}),
+                "preview": data.get("messages", [{}])[0].get("content", "") if data.get("messages") else "",
+                "usage": data.get("usage", {}),
             })
         except Exception:
             continue
     return sessions
 
 
-def _save_session(project_id: str, session_id: str, messages: list, usage: dict = None, preview: str = ""):
-    """Save a conversation session to disk."""
-    conv_path = _get_conversation_path(project_id, session_id)
-    now = datetime.now().isoformat()
-    
-    # Try to get existing data to preserve creation time
-    created = now
-    if conv_path.exists():
-        try:
-            existing = json.loads(conv_path.read_text())
-            created = existing.get("created", now)
-        except Exception:
-            pass
-    
-    data = {
-        "session_id": session_id,
-        "created": created,
-        "updated": now,
-        "project_path": os.getcwd(),
-        "preview": preview[:200] if preview else "",
-        "messages": messages,
-        "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-    }
-    
-    conv_path.write_text(json.dumps(data, indent=2))
-
-
-def _load_session(project_id: str, session_id: str) -> tuple[Optional[list[dict]], Optional[dict]]:
-    """Load a conversation session from disk.
-    
-    Returns: (messages, usage) tuple
-    """
-    conv_path = _get_conversation_path(project_id, session_id)
-    if not conv_path.exists():
-        return None, None
-    
-    try:
-        data = json.loads(conv_path.read_text())
-        return data.get("messages", []), data.get("usage")
-    except Exception:
-        return None, None
-
-
-def _select_session(project_id: str) -> Optional[str]:
-    """Interactive session selector. Returns session_id or None for new session."""
-    sessions = _list_sessions(project_id)
-    
-    if not sessions:
-        return None
-    
-    console.print(Panel.fit(
-        "[bold cyan]Resume Previous Session?[/bold cyan]\n"
-        "Select a session to resume, or start a new one.",
-        title="Sessions"
-    ))
-    
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("#", style="cyan", justify="right")
-    table.add_column("Created", style="dim")
-    table.add_column("Updated", style="dim")
-    table.add_column("Tokens", justify="right")
-    table.add_column("Preview", style="green")
-    
-    table.add_row("0", "—", "—", "—", "[dim]Start new session[/dim]")
-    
-    for i, session in enumerate(sessions[:10], 1):  # Show last 10
-        usage = session.get("usage", {})
-        total_tokens = usage.get("total_tokens", 0)
-        token_str = f"{total_tokens:,}" if total_tokens else "—"
-        
-        table.add_row(
-            str(i),
-            session["created"][:16].replace("T", " ") if session["created"] != "Unknown" else "—",
-            session["updated"][:16].replace("T", " ") if session["updated"] != "Unknown" else "—",
-            token_str,
-            session["preview"][:50] + "..." if len(session["preview"]) > 50 else session["preview"] or "[dim]No preview[/dim]",
-        )
-    
-    console.print(table)
-    
-    choice = IntPrompt.ask("Select session", default=0, show_default=True)
-    
-    if choice == 0 or choice > len(sessions):
-        return None
-    
-    return sessions[choice - 1]["session_id"]
-
-
-def _format_usage(usage: dict, model: str) -> str:
-    """Format usage statistics with cost estimation."""
-    prompt_tokens = usage.get("prompt_tokens", 0)
-    completion_tokens = usage.get("completion_tokens", 0)
-    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
-    
-    # Get pricing for model
-    pricing = PRICING.get(model, PRICING["default"])
-    input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
-    output_cost = (completion_tokens / 1_000_000) * pricing["output"]
-    total_cost = input_cost + output_cost
-    
-    # Format cost to be readable (show cents for small amounts, dollars for larger)
-    if total_cost < 0.01:
-        cost_str = f"${total_cost:.4f}"
-    elif total_cost < 1.0:
-        cost_str = f"~{int(total_cost * 100)}¢"
-    else:
-        cost_str = f"${total_cost:.2f}"
-    
-    return (
-        f"[dim]Usage: {total_tokens:,} tokens total "
-        f"({prompt_tokens:,} in / {completion_tokens:,} out) "
-        f"| Cost: {cost_str}[/dim]"
-    )
-
-
 class Agent:
     def __init__(
         self,
         base_url: str = "http://localhost:8080/v1",
-        api_key: Optional[str] = None,
+        api_key: str = "",
         model: str = "kimi-for-coding",
+        max_tool_rounds: int = 10,
         session_id: Optional[str] = None,
         resume: bool = False,
     ):
-        self.base_url = base_url
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key=api_key or "dummy",
-        )
+        self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
+        self.max_tool_rounds = max_tool_rounds
+        self.base_url = base_url
+        
+        # Session management
         self.project_id = _get_project_id()
-        self.max_tool_rounds = 30
+        self.session_id = session_id or self._generate_session_id()
         
-        # Usage tracking
-        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        
-        # Determine session ID
-        if session_id:
-            self.session_id = session_id
-        elif resume:
-            # Interactive selection
-            selected = _select_session(self.project_id)
-            self.session_id = selected if selected else self._generate_session_id()
+        # Load or initialize conversation
+        if resume:
+            self._load_or_resume()
         else:
-            self.session_id = self._generate_session_id()
-        
-        # Load or initialize messages
-        loaded_messages, loaded_usage = _load_session(self.project_id, self.session_id) if resume or session_id else (None, None)
-        if loaded_messages:
-            self.messages = loaded_messages
-            if loaded_usage:
-                self.usage = loaded_usage
-            console.print(f"[dim]↳ Resumed session: {self.session_id[:16]}... ({self.usage['total_tokens']:,} tokens)[/dim]")
-        else:
-            self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
+            self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            self._save()
+
     def _generate_session_id(self) -> str:
-        """Generate a new unique session ID."""
+        """Generate a new session ID based on timestamp."""
         now = datetime.now()
-        return f"{now.strftime('%Y%m%d_%H%M%S')}_{os.urandom(4).hex()}"
-    
-    def _get_first_user_message(self) -> str:
-        """Get the first user message for preview."""
-        for msg in self.messages:
-            if msg.get("role") == "user":
-                return msg.get("content", "")[:100]
-        return ""
-    
+        return now.strftime("%Y%m%d_%H%M%S") + f"_{os.urandom(4).hex()}"
+
+    def _get_save_path(self) -> Path:
+        """Get the file path for saving this session."""
+        return _get_conversation_path(self.project_id, self.session_id)
+
+    def _load_or_resume(self):
+        """Load existing session or show selector if multiple exist."""
+        sessions = _list_sessions(self.project_id)
+        
+        if not sessions:
+            # No existing sessions, start fresh
+            self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            console.print("[dim]No saved sessions found. Starting fresh...[/dim]")
+            self._save()
+            return
+        
+        # If specific session_id provided, load it
+        if hasattr(self, 'session_id') and any(s["session_id"] == self.session_id for s in sessions):
+            self._load()
+            return
+        
+        # Otherwise show session selector
+        console.print("\n[bold cyan]Available Sessions:[/bold cyan]")
+        for i, session in enumerate(sessions[:10], 1):  # Show top 10
+            usage = session.get("usage", {})
+            tokens = usage.get("total_tokens", 0)
+            preview = session["preview"][:50] + "..." if len(session["preview"]) > 50 else session["preview"]
+            console.print(f"  [cyan]{i}.[/cyan] {session['session_id']} | {tokens:,} tokens | {preview}")
+        
+        console.print(f"  [cyan]n.[/cyan] Start new session")
+        
+        choice = Prompt.ask(
+            "Select session",
+            choices=[str(i) for i in range(1, min(len(sessions), 10) + 1)] + ["n"],
+            default="n"
+        )
+        
+        if choice == "n":
+            self.session_id = self._generate_session_id()
+            self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            self._save()
+        else:
+            self.session_id = sessions[int(choice) - 1]["session_id"]
+            self._load()
+
+    def _load(self):
+        """Load conversation from disk."""
+        try:
+            path = self._get_save_path()
+            if path.exists():
+                data = json.loads(path.read_text())
+                self.messages = data.get("messages", [{"role": "system", "content": SYSTEM_PROMPT}])
+                self.usage = data.get("usage", {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0})
+                console.print(f"[dim]Resumed session: {self.session_id}[/dim]")
+            else:
+                self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        except Exception as e:
+            console.print(f"[dim red]Failed to load session: {e}. Starting fresh.[/dim red]")
+            self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            self._save()
+
     def _save(self):
-        """Persist current conversation state."""
-        preview = self._get_first_user_message()
-        _save_session(self.project_id, self.session_id, self.messages, self.usage, preview)
-    
+        """Save conversation to disk."""
+        try:
+            path = self._get_save_path()
+            data = {
+                "session_id": self.session_id,
+                "project_id": self.project_id,
+                "created": getattr(self, '_created', datetime.now().isoformat()),
+                "updated": datetime.now().isoformat(),
+                "messages": self.messages,
+                "usage": self.usage,
+            }
+            if not hasattr(self, '_created'):
+                self._created = data["created"]
+            path.write_text(json.dumps(data, indent=2))
+        except Exception as e:
+            console.print(f"[dim red]Failed to save session: {e}[/dim red]")
+
     def _update_usage(self, response):
-        """Update usage statistics from response."""
-        if hasattr(response, 'usage') and response.usage:
-            usage = response.usage
-            self.usage["prompt_tokens"] += getattr(usage, 'prompt_tokens', 0)
-            self.usage["completion_tokens"] += getattr(usage, 'completion_tokens', 0)
-            self.usage["total_tokens"] = (
-                self.usage["prompt_tokens"] + self.usage["completion_tokens"]
-            )
-    
+        """Update token usage from API response."""
+        usage = response.usage
+        if usage:
+            self.usage["input_tokens"] += usage.prompt_tokens or 0
+            self.usage["output_tokens"] += usage.completion_tokens or 0
+            self.usage["total_tokens"] += usage.total_tokens or 0
+
     def get_usage_summary(self) -> str:
         """Get formatted usage summary."""
-        return _format_usage(self.usage, self.model)
-    
+        total = self.usage.get("total_tokens", 0)
+        inp = self.usage.get("input_tokens", 0)
+        out = self.usage.get("output_tokens", 0)
+        
+        # Calculate estimated cost
+        pricing = PRICING.get(self.model, PRICING["default"])
+        input_cost = (inp / 1_000_000) * pricing["input"]
+        output_cost = (out / 1_000_000) * pricing["output"]
+        total_cost = input_cost + output_cost
+        
+        cost_str = f"~${total_cost:.2f}" if total_cost >= 0.01 else f"~${total_cost:.3f}"
+        
+        return f"[dim]Tokens: {total:,} ({inp:,}↑ {out:,}↓) | Est: {cost_str}[/dim]"
+
     def get_proxy_savings(self) -> str:
         """Get proxy token savings summary."""
         savings = _fetch_proxy_savings(self.base_url)
         if not savings:
-            return "[dim]Proxy savings: Unable to fetch metrics[/dim]"
+            return "[dim]Proxy: not available[/dim]"
         
+        upstream = savings.get("upstream_tokens", 0)
+        downstream = savings.get("downstream_tokens", 0)
         saved = savings.get("tokens_saved", 0)
         cache_hits = savings.get("cache_hits", 0)
         cache_rate = savings.get("cache_hit_rate", 0)
-        upstream = savings.get("upstream_tokens", 0)
-        downstream = savings.get("downstream_tokens", 0)
         
-        if saved == 0 and cache_hits == 0:
-            return "[dim]Proxy savings: No data yet[/dim]"
-        
-        # Calculate cost savings (~$2 per 1M tokens saved)
-        saved_cost = (saved / 1_000_000) * 2.0
+        # Calculate cost savings (rough estimate)
+        pricing = PRICING.get(self.model, PRICING["default"])
+        saved_cost = (saved / 1_000_000) * pricing["input"]
         
         parts = []
         if saved > 0:
@@ -325,6 +285,26 @@ class Agent:
         
         summary = " | ".join(parts) if parts else "No savings yet"
         return f"[dim green]Proxy saved: {summary} (~${saved_cost:.2f})[/dim green]"
+    
+    def get_understanding(self, user_input: str) -> str:
+        """Get a brief summary of understanding before executing."""
+        # Create a temporary message list for the understanding prompt
+        temp_messages = [
+            {"role": "system", "content": UNDERSTANDING_PROMPT},
+            {"role": "user", "content": user_input}
+        ]
+        
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=temp_messages,
+            temperature=0.3,
+            max_tokens=200,  # Keep it brief
+        )
+        
+        # Track usage for understanding request
+        self._update_usage(response)
+        
+        return response.choices[0].message.content or "I'll help you with that."
     
     def chat(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})
