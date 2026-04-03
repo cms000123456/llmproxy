@@ -10,6 +10,7 @@ A lightweight, OpenAI-compatible proxy that sits between your application and a 
 - **Response Caching**: Caches identical requests in memory with TTL to avoid redundant paid API calls.
 - **Metrics Endpoint**: Real-time visibility into requests, cache hit rate, tokens saved, and latency.
 - **OpenAI-Compatible**: Drop-in replacement for the base URL—works with any client that speaks the OpenAI chat completions API.
+- **Coding Agent CLI**: A Kimi-Code/Claude-Code style terminal agent with filesystem tools (read, write, shell, grep, ls).
 - **Dockerized**: One-command deployment with Docker Compose, including an optional Ollama sidecar.
 
 ## Quick Start (Local)
@@ -69,6 +70,52 @@ response = client.chat.completions.create(
 - `GET /health` — health check
 - `GET /metrics` — proxy metrics and cache stats
 - All other paths — transparently forwarded to the upstream API
+
+## Coding Agent CLI
+
+A built-in terminal agent that talks through the proxy (or directly to any OpenAI-compatible endpoint) and can read files, write code, run shell commands, search your codebase, and list directories.
+
+```bash
+# Interactive REPL
+python agent.py
+
+# One-shot prompt
+python agent.py "Refactor the README to be more concise"
+
+# Point at the local proxy (default)
+python agent.py -b http://localhost:8080/v1 -m kimi-for-coding "List files and explain the project"
+```
+
+### CLI Environment Variables
+
+| Variable | Default | Description |
+|-----------|---------|-------------|
+| `LLM_PROXY_BASE_URL` | `http://localhost:8080/v1` | API base URL for the agent |
+| `LLM_PROXY_UPSTREAM_API_KEY` | `''` | API key |
+| `LLM_PROXY_MODEL` | `kimi-for-coding` | Model ID |
+
+## Benchmarking Savings
+
+Measure how much the proxy saves in tokens and estimated cost without making any network calls:
+
+```bash
+python benchmark_local.py
+```
+
+Example output on an 8K token budget:
+
+| Scenario | Raw Tokens | After Proxy | Saved | Reduction |
+|----------|-----------|-------------|-------|-----------|
+| Long context chat | 24,050 | 7,818 | 16,232 | **67.5%** |
+| Massive history | 24,067 | 7,628 | 16,439 | **68.3%** |
+| Image bloat (base64) | 62,546 | 24 | 62,522 | **100%** |
+| **Overall batch** | 116,115 | 20,914 | 95,201 | **82.0%** |
+
+You can also benchmark live against a running proxy instance:
+
+```bash
+python benchmark.py http://localhost:8080
+```
 
 ## Configuration
 
