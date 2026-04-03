@@ -93,10 +93,17 @@
 ## 🟢 LOW PRIORITY (Long-term / Nice to Have)
 
 ### Features
-- [ ] **TODO-012:** Implement prompt templates with variables
+- [x] ~~**TODO-012:**~~ Implement prompt templates with variables
   - **File:** `llmproxy/templates.py` (new)
   - **Config:** Add `prompt_templates` dictionary
+  - **Features:**
+    - Jinja2-style template syntax: `{{ variable }}`, `{{ variable | default('value') }}`
+    - 6 built-in templates: code_review, explain_code, refactor, summarize_text, translate, debug_error
+    - Custom templates via config file or env vars
+    - API endpoints: `/templates`, `/templates/render`, `/templates/validate`
+  - **Tests:** `tests/test_templates.py` - 41 tests
   - **Time Estimate:** 1 day
+  - **Note:** Completed 2025-01-15
 
 - [ ] **TODO-013:** Add A/B testing for model routing
   - **File:** Modify `llmproxy/server.py`
@@ -113,10 +120,17 @@
   - **File:** Update `HOWTO.md`
   - **Time Estimate:** 2 hours
 
-- [ ] **TODO-016:** Create docker-compose for local development
+- [x] ~~**TODO-016:**~~ Create docker-compose for local development
   - **File:** `docker-compose.dev.yml`
-  - **Features:** Redis, Jaeger, Prometheus stack
+  - **Features:** 
+    - LLM Proxy with Redis cache backend
+    - Ollama for local LLM tasks
+    - Redis for caching
+    - Jaeger for distributed tracing (UI on port 16686)
+    - Prometheus for metrics (port 9090)
+    - Grafana for dashboards (port 3000, admin/admin)
   - **Time Estimate:** 2 hours
+  - **Note:** Completed 2025-01-15
 
 ---
 
@@ -124,6 +138,8 @@
 
 | TODO | Description | Date Completed |
 |------|-------------|----------------|
+| TODO-016 | Docker-compose dev stack (Redis, Jaeger, Prometheus, Grafana) | 2025-01-15 |
+| TODO-012 | Prompt templates with variables | 2025-01-15 |
 | TODO-011 | Prometheus metrics endpoint | 2025-01-15 |
 | TODO-010 | Structured logging with structlog | 2025-01-15 |
 | TODO-009 | Per-API-key cost tracking | 2025-01-15 |
