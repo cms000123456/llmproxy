@@ -368,4 +368,27 @@ class Agent:
                 # Save after tool results
                 self._save()
 
-        return "(reached max tool rounds without final answer)"
+        # Max rounds reached - force a final answer by retrying without tools
+        console.print("[yellow]Reached max tool rounds. Requesting final answer...[/yellow]")
+        
+        # Add a system message prompting for final answer
+        self.messages.append({
+            "role": "system",
+            "content": "You have reached the maximum number of tool calls. Please provide a final answer to the user now based on what you've learned. Do not use any more tools."
+        })
+        
+        # Make one final call without tools to force a response
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=self.messages,
+            temperature=0.3,
+        )
+        
+        # Track token usage
+        self._update_usage(response)
+        
+        assistant_msg = response.choices[0].message
+        self.messages.append(assistant_msg.model_dump())
+        self._save()
+        
+        return assistant_msg.content or "(agent completed but returned no response)"
