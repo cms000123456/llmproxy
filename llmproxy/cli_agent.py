@@ -517,21 +517,40 @@ class Agent:
         # Add a system message prompting for final answer
         self.messages.append({
             "role": "system",
-            "content": "You have reached the maximum number of tool calls. Please provide a final answer to the user now based on what you've learned. Do not use any more tools."
+            "content": "You have reached the maximum number of tool calls. You MUST provide a final text answer to the user now based on what you've learned. Do NOT use any more tools - respond with plain text only."
         })
         
-        # Make one final call without tools to force a response
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,
-            temperature=0.3,
-        )
+        # Make final calls without tools until we get actual content
+        # (Some models may still try to use tools, so we need to be persistent)
+        for final_attempt in range(3):
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.messages,
+                temperature=0.3,
+            )
+            
+            # Track token usage
+            self._update_usage(response)
+            
+            assistant_msg = response.choices[0].message
+            self.messages.append(assistant_msg.model_dump())
+            self._save()
+            
+            # Check if we got actual content (not just more tool calls)
+            if assistant_msg.content and not assistant_msg.tool_calls:
+                return assistant_msg.content
+            
+            # If still trying to use tools, add another reminder
+            if assistant_msg.tool_calls:
+                console.print("[dim yellow]⚠️ Model still trying to use tools, reminding...[/dim yellow]")
+                self.messages.append({
+                    "role": "system",
+                    "content": f"Tool calls are DISABLED. Attempt {final_attempt + 2}/3. Provide your final text answer NOW."
+                })
         
-        # Track token usage
-        self._update_usage(response)
+        # If we still don't have content after 3 attempts, return last message or fallback
+        last_content = self.messages[-1].get("content", "")
+        if last_content:
+            return last_content
         
-        assistant_msg = response.choices[0].message
-        self.messages.append(assistant_msg.model_dump())
-        self._save()
-        
-        return assistant_msg.content or "(agent completed but returned no response)"
+        return "⚠️ I reached the tool call limit but couldn't generate a final response. Please ask me to summarize what I found."
