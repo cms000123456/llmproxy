@@ -21,6 +21,7 @@ from .config import settings
 from .logging_config import configure_logging, get_logger
 from .storage import create_backend, MemoryBackend
 from .metrics import METRICS
+from .metrics.prometheus import get_prometheus_metrics_text
 from .filters import filter_messages
 from .compressors import compress_messages, count_message_tokens
 from .middleware.sanitize import SanitizationMiddleware
@@ -457,6 +458,12 @@ async def metrics_endpoint():
     summary = METRICS.summary()
     cache_stats = _cache.stats() if _cache else {}
     return {"metrics": summary, "cache": cache_stats}
+
+@app.get("/metrics/prometheus", response_class=Response)
+async def prometheus_metrics_endpoint():
+    """Prometheus-compatible metrics endpoint."""
+    metrics_text = get_prometheus_metrics_text()
+    return Response(content=metrics_text, media_type="text/plain")
 
 @app.get("/costs")
 async def costs_endpoint():

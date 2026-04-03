@@ -18,6 +18,7 @@
   - **File:** `llmproxy/middleware/sanitize.py` (new)
   - **Features:** Credit card, API key, email redaction
   - **Time Estimate:** 4 hours
+  - **Note:** Completed 2025-01-15
 
 ### Reliability
 - [x] ~~**TODO-003:**~~ Implement request retry with exponential backoff
@@ -30,6 +31,7 @@
     - Returns last response for 5xx after retries, raises for connection/timeout errors
   - **Tests:** `tests/test_retry.py` - 13 comprehensive tests
   - **Time Estimate:** 4 hours
+  - **Note:** Completed 2025-01-15
 
 - [x] ~~**TODO-004:**~~ Add graceful shutdown handling
   - **File:** Modify `llmproxy/server.py` lifespan
@@ -78,11 +80,13 @@
   - **Config:** Add `log_format: str = "console"` (console or json)
   - **Time Estimate:** 4 hours
   - **Note:** Completed 2025-01-15
+  - **Note:** Completed 2025-01-15
 
-- [ ] **TODO-011:** Add Prometheus metrics endpoint
+- [x] ~~**TODO-011:**~~ Add Prometheus metrics endpoint
   - **File:** `llmproxy/metrics/prometheus.py` (new)
   - **Endpoint:** `/metrics/prometheus`
   - **Time Estimate:** 4 hours
+  - **Note:** Completed 2025-01-15
 
 ---
 
@@ -120,6 +124,7 @@
 
 | TODO | Description | Date Completed |
 |------|-------------|----------------|
+| TODO-011 | Prometheus metrics endpoint | 2025-01-15 |
 | TODO-010 | Structured logging with structlog | 2025-01-15 |
 | TODO-009 | Per-API-key cost tracking | 2025-01-15 |
 | TODO-005 | Streaming response support | 2025-01-14 |
