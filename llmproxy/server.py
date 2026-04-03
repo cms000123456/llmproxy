@@ -755,10 +755,25 @@ async def proxy(request: Request, path: str):
     else:
         tokens_saved_filtering = 0
 
+    # A/B Testing: Select upstream client based on variant
+    ab_variant = "control"
+    if settings.ab_test_enabled and is_chat_completion:
+        ab_variant = _get_ab_test_variant(client_api_key)
+        if _tracer:
+            span = _tracer.start_span("ab_test_selection")
+            span.set_attribute("ab_test.variant", ab_variant)
+            span.set_attribute("ab_test.enabled", True)
+            span.end()
+    
+    # Select HTTP client based on A/B test variant
+    upstream_http_client = _http_client
+    if ab_variant == "experimental" and _experimental_http_client is not None:
+        upstream_http_client = _experimental_http_client
+
     # Handle streaming requests differently
     if is_streaming:
         # Streaming requests bypass cache and use different handling
-        if _http_client is None:
+        if upstream_http_client is None:
             return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
 
         start = time.perf_counter()
@@ -766,7 +781,7 @@ async def proxy(request: Request, path: str):
         try:
             # For streaming, we don't retry - fail fast and let client reconnect
             status_code, response_headers, chunk_iterator = await _stream_upstream_response(
-                http_client=_http_client,
+                http_client=upstream_http_client,
                 method=method,
                 url=f"/{path}",
                 headers=headers,
@@ -841,7 +856,7 @@ async def proxy(request: Request, path: str):
         )
 
     # Proxy to upstream with retry logic
-    if _http_client is None:
+    if upstream_http_client is None:
         return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
 
     try:
@@ -851,7 +866,7 @@ async def proxy(request: Request, path: str):
                 span.set_attribute("http.url", f"/{path}")
                 span.set_attribute("retry.max", settings.max_retries)
                 upstream_response = await _upstream_request_with_retry(
-                    http_client=_http_client,
+                    http_client=upstream_http_client,
                     method=method,
                     url=f"/{path}",
                     headers=headers,
@@ -864,7 +879,7 @@ async def proxy(request: Request, path: str):
                 span.set_attribute("http.status_code", upstream_response.status_code)
         else:
             upstream_response = await _upstream_request_with_retry(
-                http_client=_http_client,
+                http_client=upstream_http_client,
                 method=method,
                 url=f"/{path}",
                 headers=headers,
@@ -894,6 +909,13 @@ async def proxy(request: Request, path: str):
     # Cache the response if it's a chat completion
     if is_chat_completion and settings.enable_cache and _cache is not None and response_data:
         _cache.set(_make_cache_key(transformed_payload), response_data)
+
+    # Record A/B test metrics
+    if settings.ab_test_enabled and is_chat_completion:
+        _ab_test_metrics[ab_variant]["requests"] += 1
+        _ab_test_metrics[ab_variant]["latency_ms"] += int(latency)
+        if upstream_response.status_code >= 400:
+            _ab_test_metrics[ab_variant]["errors"] += 1
 
     # Record metrics
     downstream_tokens = 0

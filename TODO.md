@@ -104,11 +104,14 @@
   - **Time Estimate:** 1 day
   - **Note:** Completed 2025-01-15
 
-- [ ] **TODO-013:** Add A/B testing for model routing
-  - **File:** Modify `llmproxy/server.py`
-  - **Config:** Add `experimental_upstream_url`, `traffic_split`
+- [x] ~~**TODO-013:**~~ Add A/B testing for model routing
+  - **File:** `llmproxy/server.py` - `_get_ab_test_variant()`, variant selection
+  - **Config:** `ab_test_enabled`, `experimental_upstream_base_url`, `ab_test_traffic_split`
+  - **Features:** Sticky sessions, traffic splitting, per-variant metrics
+  - **Tests:** `tests/test_ab_testing.py` (9 tests), `tests/test_ab_integration.py` (6 tests)
+  - **Endpoint:** `/ab-test/status` for monitoring
   - **Time Estimate:** 1 day
-  - **Note:** Implemented 2025-01-15 - requires testing
+  - **Note:** Completed 2025-04-03 - fully integrated with request routing
 
 - [x] ~~**TODO-014:**~~ Add distributed tracing (OpenTelemetry)
   - **File:** `llmproxy/tracing.py` (new)
@@ -158,6 +161,7 @@
 
 | TODO | Description | Date Completed |
 |------|-------------|----------------|
+| TODO-013 | A/B testing for model routing (sticky sessions, traffic split, metrics) | 2025-04-03 |
 | TODO-018 | Type checking with mypy (setup complete, ~40 non-critical errors remaining) | 2025-04-03 |
 | TODO-014 | Distributed tracing with OpenTelemetry (Jaeger integration) | 2025-04-03 |
 | TODO-017 | Linting with Ruff (1000+ issues fixed, full codebase reformatted) | 2025-04-03 |
