@@ -50,15 +50,27 @@ docker-compose -f docker-compose.monitoring.yml up -d
 
 ## Dashboard Panels
 
-The Grafana dashboard includes:
+### Overview Row
 - **Total Requests** - Request counter
 - **Cache Hit Rate** - Percentage of cached responses
 - **Cache Hits/Misses** - Cache statistics
 - **Total Errors** - Error counter
+
+### Performance Row
 - **Request Rate** - Requests per second over time
 - **Average Latency** - Response latency trends
+
+### Token Efficiency Row
 - **Token Usage** - Upstream vs downstream tokens
 - **Tokens Saved** - Efficiency gains from filtering/compression
+
+### Cost Tracking Row
+- **Estimated Cost ($)** - Total estimated spend (input: $0.01/1K, output: $0.03/1K tokens)
+- **Cost Savings ($)** - Money saved through filtering/compression
+- **Savings Percentage** - Percentage of tokens saved
+- **Cost Over Time** - Input, output, and saved costs over time
+
+**Note:** Cost calculations assume $0.01 per 1K input tokens and $0.03 per 1K output tokens. Adjust these estimates based on your actual upstream API pricing.
 
 ## Alerting
 

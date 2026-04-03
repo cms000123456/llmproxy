@@ -655,10 +655,18 @@ The pre-built dashboard provides:
    - Latency trends
    - Error rate
 
-3. **Efficiency Row** - Cost savings
+3. **Efficiency Row** - Token optimization
    - Token usage (upstream vs downstream)
    - Tokens saved by filtering/compression
    - Cache hit/miss trends
+
+4. **Cost Tracking Row** - Financial metrics
+   - **Estimated Cost ($)** - Running total spend based on token usage
+   - **Cost Savings ($)** - Money saved through optimization
+   - **Savings Percentage** - Efficiency percentage
+   - **Cost Over Time** - Trends and breakdown by input/output/saved
+   
+   *Pricing assumptions: $0.01/1K input tokens, $0.03/1K output tokens*
 
 **Import URL:** http://localhost:3002/d/llmproxy-metrics/llm-proxy-metrics
 
