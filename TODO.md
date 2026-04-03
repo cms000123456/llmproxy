@@ -1,6 +1,6 @@
 # LLM Proxy TODO List
 
-**Last Updated:** 2026-04-03  
+**Last Updated:** 2025-01-15  
 **Status:** Active Development
 
 ---
@@ -8,25 +8,16 @@
 ## 🔴 HIGH PRIORITY (Do First)
 
 ### Security
-- [ ] **TODO-001:** ~~Add API key authentication middleware~~ - **ON HOLD**
-  - Reason: User requested to hold off on API auth for now
-  - Will revisit after other security improvements
+- [ ] **TODO-001:** Add API key authentication middleware
+  - **File:** `llmproxy/auth.py` (new)
+  - **Config:** Add `api_keys: list[str]` to Settings
+  - **Tests:** Add auth tests to `tests/test_server.py`
+  - **Time Estimate:** 1 day
 
-- [x] **TODO-002:** Add PII sanitization middleware ✅ **COMPLETED**
-  - **File:** `llmproxy/middleware/sanitize.py` ✅
-  - **Tests:** `tests/test_sanitize.py` (17 tests, all passing) ✅
-  - **Integration:** Added to `server.py` middleware stack ✅
-  - **Features:** 
-    - API key redaction (sk-*, pk-*, Bearer tokens)
-    - Credit card redaction
-    - Email redaction
-    - Phone number redaction
-    - SSN redaction
-    - Private key redaction
-    - Password/secret field redaction
-    - AWS/GitHub/Slack token redaction
-  - **Standalone functions:** `sanitize_for_logging()`, `sanitize_dict_for_logging()`
-  - **Time Estimate:** 4 hours ✅
+- [ ] **TODO-002:** Add request/response sanitization for PII
+  - **File:** `llmproxy/middleware/sanitize.py` (new)
+  - **Features:** Credit card, API key, email redaction
+  - **Time Estimate:** 4 hours
 
 ### Reliability
 - [ ] **TODO-003:** Implement request retry with exponential backoff
@@ -73,14 +64,13 @@
   - **File:** `llmproxy/cost_tracker.py` (new)
   - **Features:** Track spending, set budgets, alerts
   - **Time Estimate:** 1 day
-  - **Depends on:** TODO-001 (authentication - on hold)
+  - **Depends on:** TODO-001 (authentication)
 
 ### Observability
 - [ ] **TODO-010:** Add structured logging with structlog
   - **File:** Replace print/logging with structlog
   - **Config:** Add `log_format: str = "json"`
   - **Time Estimate:** 4 hours
-  - **Note:** Can use `sanitize_for_logging()` for PII protection
 
 - [ ] **TODO-011:** Add Prometheus metrics endpoint
   - **File:** `llmproxy/metrics/prometheus.py` (new)
@@ -128,27 +118,20 @@
 
 ## ✅ COMPLETED
 
-- [x] Create comprehensive test suite (95+ tests)
-- [x] Add security middleware (rate limiting, body size, headers)
-- [x] Fix path traversal vulnerability
-- [x] Verify secrets not in git
-- [x] **NEW:** Add PII sanitization middleware (TODO-002)
-  - 17 test cases covering all PII patterns
-  - Integrated into request/response pipeline
-  - Standalone functions for logging
+- [x] ~~Create comprehensive test suite (95 tests)~~
+- [x] ~~Add security middleware (rate limiting, body size, headers)~~
+- [x] ~~Fix path traversal vulnerability~~
+- [x] ~~Verify secrets not in git~~
 
 ---
 
 ## 📊 Progress Tracking
 
 ```
-HIGH:     1/4  complete  ██░░░░░░░░  25%
-MEDIUM:   0/7  pending   ░░░░░░░░░░  0%
-LOW:      0/6  pending   ░░░░░░░░░░  0%
-TOTAL:    1/17 complete  █░░░░░░░░░  6%
-
-Recently Completed:
-✅ TODO-002: PII Sanitization Middleware
+HIGH:     4/4  pending  ████░░░░░░  0%
+MEDIUM:   7/7  pending  ░░░░░░░░░░  0%
+LOW:      6/6  pending  ░░░░░░░░░░  0%
+TOTAL:   17/17 pending  ░░░░░░░░░░  0%
 ```
 
 ---
@@ -171,29 +154,15 @@ Recently Completed:
 - **🟡 MEDIUM:** Performance, reliability, major features
 - **🟢 LOW:** Nice-to-have, experimental, minor enhancements
 
-### Security Improvements Completed
-1. ✅ Path traversal protection (realpath)
-2. ✅ Rate limiting (100 req/min/IP)
-3. ✅ Body size limits (10MB)
-4. ✅ Security headers (CSP, HSTS, X-Frame-Options)
-5. ✅ PII sanitization (17 patterns)
-
-### Next Recommended
-After PII sanitization, consider:
-1. TODO-004: Graceful shutdown (stability)
-2. TODO-003: Request retry logic (reliability)
-3. TODO-010: Structured logging (using new sanitization functions)
-
 ---
 
 ## 🔗 Related Documents
 
 - [Security Audit](reports/security_audit.md)
-- [Codebase Audit](reports/codebase_audit_2026-04-03.md)
+- [Codebase Audit](reports/codebase_audit_2025-01-15.md)
 - [Test Report](reports/test_report.md)
 - [Improvement Suggestions](reports/improvement_suggestions.md)
 
 ---
 
 *This TODO list is a living document. Update as work progresses.*
-*Last updated: 2026-04-03 after PII sanitization implementation*

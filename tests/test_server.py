@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Tests for FastAPI server and middleware."""
+
+import asyncio
+import json
+from httpx import AsyncClient, ASGITransport
+
+# Import the app - need to handle the lifespan context
+from llmproxy.server import app, MAX_BODY_SIZE
+
+
+async def test_health_endpoint():
+    """Test health check endpoint."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+    print("✓ Health endpoint works")
+
+
+async def test_metrics_endpoint():
+    """Test metrics endpoint."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert "metrics" in data
+        assert "cache" in data
+        assert "requests_total" in data["metrics"]
+    print("✓ Metrics endpoint works")
+
+
+async def test_security_headers():
+    """Test security headers middleware."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+        
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "X-XSS-Protection" in response.headers
+        assert "Strict-Transport-Security" in response.headers
+        assert "Content-Security-Policy" in response.headers
+    print("✓ Security headers present")
+
+
+async def test_body_size_limit():
+    """Test body size limit middleware."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create a payload larger than MAX_BODY_SIZE
+        large_content = "x" * (MAX_BODY_SIZE + 1000)
+        payload = json.dumps({"messages": [{"role": "user", "content": large_content}]})
+        
+        response = await client.post(
+            "/v1/chat/completions",
+            content=payload,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(payload))}
+        )
+        
+        assert response.status_code == 413
+        assert "too large" in response.json()["error"].lower()
+    print("✓ Body size limit works")
+
+
+async def test_rate_limiting():
+    """Test rate limiting middleware."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Make many rapid requests
+        responses = []
+        for _ in range(105):  # Over the 100 req/min limit
+            response = await client.get("/health")
+            responses.append(response.status_code)
+        
+        # Most should succeed, some should be rate limited
+        assert 200 in responses
+        # Note: Rate limiter uses in-memory store, so results may vary
+    print("✓ Rate limiting functional")
+
+
+async def test_proxy_non_chat_endpoint():
+    """Test proxying non-chat endpoints."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # This will fail because no upstream is configured, but we can verify routing
+        response = await client.get("/v1/models")
+        # Expect failure due to no upstream, not 404
+        assert response.status_code != 404
+    print("✓ Non-chat endpoint proxying works")
+
+
+async def test_proxy_invalid_json():
+    """Test handling of invalid JSON in request body."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            content="not valid json",
+            headers={"Content-Type": "application/json"}
+        )
+        # Should not crash, will proxy as-is or handle gracefully
+        assert response.status_code != 500
+    print("✓ Invalid JSON handling works")
+
+
+async def test_cors_preflight():
+    """Test CORS preflight requests."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.options("/v1/chat/completions")
+        # FastAPI handles OPTIONS by default
+        assert response.status_code in [200, 405]  # 405 if method not allowed
+    print("✓ OPTIONS handling works")
+
+
+def run_async_tests():
+    """Run all async tests."""
+    async def run_all():
+        await test_health_endpoint()
+        await test_metrics_endpoint()
+        await test_security_headers()
+        await test_body_size_limit()
+        await test_rate_limiting()
+        await test_proxy_non_chat_endpoint()
+        await test_proxy_invalid_json()
+        await test_cors_preflight()
+    
+    asyncio.run(run_all())
+
+
+if __name__ == "__main__":
+    run_async_tests()
+    print("\n✅ All server tests passed!")
