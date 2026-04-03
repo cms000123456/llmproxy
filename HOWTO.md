@@ -7,6 +7,7 @@ A practical guide for using the LLM Proxy and Coding Agent CLI.
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Running the Proxy](#running-the-proxy)
+- [Security Configuration](#security-configuration)
 - [Using the Coding Agent](#using-the-coding-agent)
 - [Project Workflow](#project-workflow)
 - [Session Management](#session-management)
@@ -97,10 +98,170 @@ curl http://localhost:8080/health
 
 ```bash
 curl http://localhost:8080/health
-# Expected: {"status":"ok"}
+# Expected: {"status":"ok", "inflight_requests": 0}
 
 curl http://localhost:8080/metrics
 # Shows usage metrics and cache stats
+```
+
+---
+
+## Security Configuration
+
+### API Key Authentication
+
+Protect your proxy by requiring API keys from clients.
+
+#### 1. Generate API Keys
+
+```bash
+# Generate a new key
+python -c "from llmproxy.auth import generate_api_key; print(generate_api_key())"
+
+# Example output: llmproxy_a3f8b2c9d1e4f5a6b7c8d9e0f1a2b3c4
+```
+
+#### 2. Configure Keys
+
+```bash
+# Single key
+export LLM_PROXY_API_KEYS='["llmproxy_your_key_here"]'
+
+# Multiple keys
+export LLM_PROXY_API_KEYS='["llmproxy_key_1", "llmproxy_key_2", "llmproxy_key_3"]'
+
+# Disable authentication (open mode - not recommended for production)
+export LLM_PROXY_AUTH_ENABLED=false
+```
+
+#### 3. Use the Proxy with Authentication
+
+**Option A: Bearer Token (recommended)**
+
+```bash
+curl -H "Authorization: Bearer llmproxy_your_key" \
+     -H "Content-Type: application/json" \
+     -d '{"model": "moonshot-v1-128k", "messages": [{"role": "user", "content": "Hello"}]}' \
+     http://localhost:8080/v1/chat/completions
+```
+
+**Option B: X-API-Key Header**
+
+```bash
+curl -H "X-API-Key: llmproxy_your_key" \
+     -H "Content-Type: application/json" \
+     -d '{"model": "moonshot-v1-128k", "messages": [{"role": "user", "content": "Hello"}]}' \
+     http://localhost:8080/v1/chat/completions
+```
+
+**Option C: Python OpenAI Client**
+
+```python
+from openai import OpenAI
+
+# If proxy key equals upstream key (simplest)
+client = OpenAI(
+    base_url="http://localhost:8080/v1",
+    api_key="llmproxy_your_key"
+)
+
+# If proxy key differs from upstream key
+client = OpenAI(
+    base_url="http://localhost:8080/v1",
+    api_key="llmproxy_your_key",
+    default_headers={"X-Upstream-API-Key": "your-upstream-key"}
+)
+```
+
+#### 4. Public Endpoints
+
+The following endpoints don't require authentication (even when enabled):
+
+- `GET /health` - Health check
+- `GET /metrics` - Metrics and statistics
+
+#### 5. Managing Keys at Runtime
+
+```python
+from llmproxy.auth import APIKeyManager, generate_api_key
+
+# List configured keys (masked)
+APIKeyManager.list_keys()
+# ['llmproxy...5678']
+
+# Add a new key
+new_key = generate_api_key()
+APIKeyManager.add_key(new_key)
+
+# Remove a key
+APIKeyManager.remove_key(new_key)
+```
+
+### PII Sanitization
+
+The proxy automatically redacts sensitive information from requests and responses:
+
+**Redacted Data Types:**
+- Credit card numbers (Visa, Mastercard, Amex, Discover)
+- Email addresses
+- Phone numbers (US format)
+- Social Security Numbers
+- API keys (OpenAI, AWS, GitHub, Slack)
+- Private keys (SSH, RSA)
+- Passwords in JSON payloads
+
+**Example:**
+
+```json
+// Before sanitization
+{
+  "messages": [
+    {"role": "user", "content": "My email is user@example.com and my card is 4111111111111111"}
+  ]
+}
+
+// After sanitization (sent to upstream)
+{
+  "messages": [
+    {"role": "user", "content": "My email is [EMAIL_REDACTED] and my card is [CREDIT_CARD_REDACTED]"}
+  ]
+}
+```
+
+PII sanitization is always active and cannot be disabled.
+
+### Rate Limiting
+
+Basic rate limiting is enabled by default:
+
+- **Limit:** 100 requests per minute per IP
+- **Scope:** Per-client IP address
+- **Public endpoints:** Not rate limited (`/health`, `/metrics`)
+
+If you exceed the limit:
+
+```json
+{"error": "Rate limit exceeded. Try again later."}
+```
+
+### Security Headers
+
+All responses include security headers:
+
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Content-Security-Policy: default-src 'self'
+```
+
+### Body Size Limits
+
+Maximum request body size is 10MB by default. Requests exceeding this will receive:
+
+```json
+{"error": "Request body too large (max 10MB)"}
 ```
 
 ---
@@ -201,228 +362,302 @@ cd ~/projects/data-pipeline
 
 ## Session Management
 
-### List Saved Sessions
+Sessions store conversation history and are persisted between restarts.
+
+### Session Storage
+
+- Location: `.llmproxy_sessions/` in each workspace
+- Format: JSON files
+- Naming: `{timestamp}_{hash}.json`
+
+### List Sessions
 
 ```bash
-./llmproxy.sh agent --list
-
-# Output:
-# ┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
-# ┃ Session ID          ┃ Created        ┃ Updated        ┃ Tokens  ┃
-# ┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━┩
-# │ 20250403_143022_... │ 2025-04-03 14:30│ 2025-04-03 15:45│ 12,453  │
-# │ 20250403_101511_... │ 2025-04-03 10:15│ 2025-04-03 10:45│ 3,210   │
-# └─────────────────────┴────────────────┴────────────────┴─────────┘
+/media/cms/data/repositories/llmproxy/llmproxy.sh agent --list
 ```
 
-### Resume Previous Session
+### Resume Last Session
 
 ```bash
-# Interactive selection
-./llmproxy.sh agent --resume
-
-# Resume specific session by ID
-./llmproxy.sh agent --session-id 20250403_143022_a1b2c3d4
+/media/cms/data/repositories/llmproxy/llmproxy.sh agent --resume
 ```
 
-### How Sessions Work
+### Switch Session
 
-- **Location**: `~/.local/share/llmproxy/conversations/`
-- **Per-project**: Each directory has isolated sessions
-- **Auto-saved**: Every message is saved automatically
-- **Persistent**: Survive system restarts
-- **Not in git**: Stored outside your project directory
+```bash
+# In interactive mode
+You: /switch
+# Shows numbered list of sessions to choose from
+```
+
+### Session Isolation
+
+Sessions are completely isolated by workspace:
+- Different directories = different session sets
+- No cross-contamination between projects
+- Sessions persist in project directory (commit to git or add to .gitignore)
 
 ---
 
 ## Environment Setup
 
-### Required Variables
+### Development Environment
+
+Create a `.env` file in the project root:
 
 ```bash
-# API Configuration (required)
-export LLM_PROXY_UPSTREAM_BASE_URL="https://api.moonshot.cn/v1"
-export LLM_PROXY_UPSTREAM_API_KEY="your-api-key"
-
-# Proxy Settings (optional)
-export LLM_PROXY_HOST="0.0.0.0"
-export LLM_PROXY_PORT="8080"
-
-# Agent Settings (optional)
-export LLM_PROXY_MODEL="kimi-for-coding"
-export LLM_PROXY_BASE_URL="http://localhost:8080/v1"
-```
-
-### Using .env File
-
-```bash
-# Copy template
+# Copy example
 cp .env-example .env
 
-# Edit with your keys
+# Edit with your values
 nano .env
+```
 
-# Load environment
-export $(grep -v '^#' .env | xargs)
+Example `.env`:
+
+```bash
+# Upstream API
+LLM_PROXY_UPSTREAM_BASE_URL=https://api.moonshot.cn/v1
+LLM_PROXY_UPSTREAM_API_KEY=your-upstream-key
+
+# Authentication (optional, recommended for shared environments)
+LLM_PROXY_API_KEYS=["llmproxy_dev_key_123"]
+
+# Proxy settings
+LLM_PROXY_PORT=8080
+LLM_PROXY_ENABLE_CACHE=true
+
+# Ollama (optional)
+LLM_PROXY_OLLAMA_ENABLE_COMPRESSION=true
+LLM_PROXY_OLLAMA_MODEL=llama3.2
+```
+
+### Production Environment
+
+For production deployments, use stronger authentication:
+
+```bash
+# Generate strong random keys
+KEY1=$(python -c "from llmproxy.auth import generate_api_key; print(generate_api_key())")
+KEY2=$(python -c "from llmproxy.auth import generate_api_key; print(generate_api_key())")
+
+# Export keys securely (use secrets manager in real production)
+export LLM_PROXY_API_KEYS="[\"$KEY1\", \"$KEY2\"]"
+export LLM_PROXY_UPSTREAM_API_KEY="your-upstream-key"
+
+# Disable auth only in trusted local networks
+export LLM_PROXY_AUTH_ENABLED=true
+
+# Start server
+./llmproxy.sh proxy
 ```
 
 ---
 
 ## Docker Deployment
 
-### Full Stack (Proxy + Ollama with GPU)
+### Basic Docker Compose
 
 ```bash
 # Start services
 docker compose up -d
 
-# Verify
-docker ps
-
 # View logs
-docker logs llmproxy
-docker logs ollama
+docker compose logs -f proxy
 
-# Pull local model
-docker exec ollama ollama pull llama3.2
-
-# Stop
+# Stop services
 docker compose down
 ```
 
-### Verify GPU is Used
+### With Authentication
+
+Create a `docker-compose.override.yml`:
+
+```yaml
+services:
+  proxy:
+    environment:
+      - LLM_PROXY_API_KEYS=["llmproxy_prod_key_abc123"]
+      - LLM_PROXY_AUTH_ENABLED=true
+```
+
+### Production Docker Setup
 
 ```bash
-docker logs ollama | grep -i "cuda\|gpu"
-# Should show: "CUDA0 model buffer size = ..."
+# 1. Create environment file
+cat > .env.production << 'EOF'
+LLM_PROXY_UPSTREAM_BASE_URL=https://api.moonshot.cn/v1
+LLM_PROXY_UPSTREAM_API_KEY=${UPSTREAM_API_KEY}
+LLM_PROXY_API_KEYS=${PROXY_API_KEYS}
+LLM_PROXY_AUTH_ENABLED=true
+LLM_PROXY_ENABLE_CACHE=true
+LLM_PROXY_CACHE_MAX_SIZE=10000
+LLM_PROXY_LOG_LEVEL=INFO
+EOF
+
+# 2. Deploy with docker compose
+docker compose --env-file .env.production up -d
+
+# 3. Check health
+curl -H "X-API-Key: your-key" http://localhost:8080/health
 ```
+
+### Kubernetes Considerations
+
+```yaml
+# Example deployment snippet
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: llm-proxy
+        image: llmproxy:latest
+        env:
+        - name: LLM_PROXY_API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: llm-proxy-secrets
+              key: api-keys
+        - name: LLM_PROXY_UPSTREAM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-proxy-secrets
+              key: upstream-key
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+```
+
+The proxy handles SIGTERM gracefully with a 30-second timeout for inflight requests.
 
 ---
 
 ## Troubleshooting
 
-### Agent Can't Connect
+### Authentication Issues
+
+**Problem:** Getting 401 "Unauthorized" errors
 
 ```bash
-# Check proxy is running
+# Check if auth is enabled
 curl http://localhost:8080/health
+# If auth is enabled, this works without key (public endpoint)
 
-# If not running:
-./llmproxy.sh proxy
+# Test with key
+curl -H "Authorization: Bearer your-key" http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "test", "messages": []}'
+
+# Verify key is configured
+python -c "from llmproxy.config import settings; print(settings.api_keys)"
 ```
 
-### API Key Errors
+**Problem:** Keys not being recognized
+
+- Ensure keys are in valid JSON array format: `["key1", "key2"]`
+- Check for proper quoting in shell: `export LLM_PROXY_API_KEYS='["key"]'
+- Verify no trailing spaces in keys
+
+### Connection Issues
+
+**Problem:** Can't connect to proxy
 
 ```bash
-# Verify key is set
-echo $LLM_PROXY_UPSTREAM_API_KEY
+# Check if port is in use
+lsof -i :8080
 
-# Set it if empty
-export LLM_PROXY_UPSTREAM_API_KEY="your-key-here"
+# Check proxy logs
+./llmproxy.sh proxy 2>&1 | head -50
+
+# Test with verbose curl
+curl -v http://localhost:8080/health
 ```
 
-### Port Already in Use
+**Problem:** Upstream connection fails
 
 ```bash
-# Find what's using port 8080
-sudo lsof -i :8080
-
-# Kill it or change port in .env
-export LLM_PROXY_PORT=8081
+# Check upstream connectivity
+curl -H "Authorization: Bearer $LLM_PROXY_UPSTREAM_API_KEY" \
+  $LLM_PROXY_UPSTREAM_BASE_URL/models
 ```
 
-### Session Not Found
+### Cache Issues
+
+**Problem:** Not seeing cache hits
 
 ```bash
-# List all sessions for current directory
-./llmproxy.sh agent --list
+# Check cache stats
+curl http://localhost:8080/metrics
 
-# Check session storage location
-ls ~/.local/share/llmproxy/conversations/
+# Clear cache by restarting proxy
+# Or disable temporarily: LLM_PROXY_ENABLE_CACHE=false
 ```
 
-### Out of Memory (Ollama)
+### Ollama Issues
+
+**Problem:** Ollama not available
 
 ```bash
-# Check GPU memory
-nvidia-smi
+# Check if Ollama is running
+docker exec ollama ollama list
 
-# Use smaller model
-docker exec ollama ollama pull llama3.2:1b
+# Pull model manually
+docker exec ollama ollama pull llama3.2
+
+# Check Ollama logs
+docker compose logs ollama
 ```
+
+### Performance Issues
+
+**Problem:** High latency
+
+```bash
+# Check metrics for bottleneck
+curl http://localhost:8080/metrics | python -m json.tool
+
+# Look for:
+# - Cache hit rate (should be >20% for repeated queries)
+# - Average latency
+# - Token savings
+```
+
+### Getting Help
+
+1. Check logs: `./llmproxy.sh proxy` (run without `-d` for verbose output)
+2. Run tests: `./llmproxy.sh test`
+3. Check [TODO.md](TODO.md) for known issues
+4. Review [improvement_suggestions.md](reports/improvement_suggestions.md)
 
 ---
 
-## Pro Tips
+## Tips & Best Practices
 
-### Add Alias to Shell
+### Security
 
-Add to `~/.bashrc` or `~/.zshrc`:
+1. **Always enable authentication** in shared environments
+2. **Rotate keys regularly** using `APIKeyManager`
+3. **Use different keys** for different clients/teams
+4. **Store keys securely** (use Docker secrets, K8s secrets, or env files)
+5. **Monitor metrics** for unusual activity
 
-```bash
-alias agent='/media/cms/data/repositories/llmproxy/llmproxy.sh agent'
-alias agent-run='/media/cms/data/repositories/llmproxy/llmproxy.sh run'
-alias agent-list='/media/cms/data/repositories/llmproxy/llmproxy.sh agent --list'
-```
+### Performance
 
-Then use:
-```bash
-cd ~/projects/my-app
-agent          # Start interactive mode
-agent-list     # Show sessions
-```
+1. **Enable caching** for repetitive queries
+2. **Use Ollama compression** for long conversations
+3. **Set appropriate token limits** for your use case
+4. **Monitor cache hit rates** and adjust TTL if needed
 
-### Best Practices
+### Cost Optimization
 
-1. **One project per directory** - Sessions are isolated by path
-2. **Resume long tasks** - Use `--resume` to continue multi-step work
-3. **Check usage** - Token costs are displayed after each response
-4. **Save frequently** - Sessions auto-save, but complex tasks benefit from explicit saves
-5. **Use specific prompts** - "Create a FastAPI app" vs "Build a web server"
+1. **Use local models** for compression/relevance filtering
+2. **Cache aggressively** for deterministic queries
+3. **Filter and compress** before sending to upstream
+4. **Monitor metrics** to track savings
 
 ---
 
-## Example Workflows
-
-### Web API Project
-
-```bash
-mkdir ~/projects/task-api && cd ~/projects/task-api
-agent
-
-# Then:
-# You: Create a FastAPI app for a task management API
-# You: Add CRUD endpoints for tasks
-# You: Add tests for all endpoints
-# You: Create a Dockerfile
-```
-
-### Data Analysis
-
-```bash
-mkdir ~/projects/data-analysis && cd ~/projects/data-analysis
-agent
-
-# Then:
-# You: Load data.csv and show the first 5 rows
-# You: Create visualizations for the sales data
-# You: Train a simple prediction model
-```
-
-### Bug Fixing
-
-```bash
-cd ~/projects/existing-project
-agent --resume  # Continue from previous session
-
-# Then:
-# You: The tests are failing, investigate and fix
-```
-
----
-
-## Support
-
-- **Issues**: Check logs with `docker logs llmproxy` or `./llmproxy.sh proxy` output
-- **Metrics**: Visit http://localhost:8080/metrics
-- **Health**: Check http://localhost:8080/health
+*For more details, see [README.md](README.md) and [TODO.md](TODO.md)*
