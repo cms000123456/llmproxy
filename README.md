@@ -29,6 +29,18 @@ export LLM_PROXY_ENABLE_CACHE=true
 python main.py
 ```
 
+### Convenience Wrapper
+
+A shell wrapper script is included so you don't have to remember Python paths:
+
+```bash
+./llmproxy.sh proxy          # Start the proxy server
+./llmproxy.sh agent          # Start the interactive coding agent CLI
+./llmproxy.sh run "..."      # Run a one-shot agent prompt
+./llmproxy.sh bench-local    # Run local token-savings benchmark
+./llmproxy.sh test           # Run unit tests
+```
+
 The proxy listens on `http://localhost:8080` by default.
 
 ## Quick Start (Docker Compose)
