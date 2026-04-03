@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .base import StorageBackend
 from .memory import MemoryBackend
+from typing import Any
 
 __all__ = ["StorageBackend", "MemoryBackend"]
 
@@ -16,7 +17,7 @@ except ImportError:
     pass
 
 
-def create_backend(backend_type: str, **kwargs) -> StorageBackend:
+def create_backend(backend_type: str, **kwargs: Any) -> StorageBackend:
     """Factory function to create storage backends.
 
     Args:

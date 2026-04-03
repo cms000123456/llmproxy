@@ -3,7 +3,7 @@ from __future__ import annotations
 """Redis storage backend for distributed caching."""
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 try:
     import redis
@@ -84,7 +84,8 @@ class RedisBackend(StorageBackend):
             data = self._client.get(self._make_key(key))
             if data is None:
                 return None
-            return json.loads(data)
+            result: dict[str, Any] = json.loads(data)
+            return result
         except RedisError as e:
             logger.warning(f"Redis get error: {e}")
             return None
@@ -123,7 +124,7 @@ class RedisBackend(StorageBackend):
             return False
 
         try:
-            result = self._client.delete(self._make_key(key))
+            result: int = self._client.delete(self._make_key(key))
             return result > 0
         except RedisError as e:
             logger.warning(f"Redis delete error: {e}")
@@ -197,6 +198,7 @@ class RedisBackend(StorageBackend):
             return False
 
         try:
-            return self._client.ping()
+            ping_result: bool = self._client.ping()
+            return ping_result
         except RedisError:
             return False

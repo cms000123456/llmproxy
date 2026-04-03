@@ -58,7 +58,7 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
         (r"xox[baprs]-[0-9a-zA-Z]{10,}", "[SLACK_TOKEN_REDACTED]"),
     ]
 
-    def __init__(self, app, enabled: bool = True, log_sanitization: bool = False):
+    def __init__(self, app: object, enabled: bool = True, log_sanitization: bool = False) -> None:
         super().__init__(app)
         self.enabled = enabled
         self.log_sanitization = log_sanitization
@@ -67,7 +67,7 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
             for pattern, replacement in self.PATTERNS
         ]
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: object) -> Response:
         if not self.enabled:
             return await call_next(request)
 
@@ -82,7 +82,7 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
 
         return response
 
-    async def _sanitize_request(self, request: Request):
+    async def _sanitize_request(self, request: Request) -> None:
         """Sanitize incoming request data."""
         # Sanitize headers (Authorization, Cookie, etc.)
         for header in ["authorization", "cookie", "x-api-key"]:
@@ -102,8 +102,11 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
 
         # Read response body
         body = b""
-        async for chunk in response.body_iterator:
-            body += chunk
+        # body_iterator only exists on StreamingResponse
+        body_iterator = getattr(response, "body_iterator", None)
+        if body_iterator:
+            async for chunk in body_iterator:
+                body += chunk
 
         if not body:
             return response
@@ -147,7 +150,8 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
             return obj
 
         if isinstance(obj, dict):
-            return {key: self._sanitize_object(value) for key, value in obj.items()}
+            result: dict[str, Any] = {key: self._sanitize_object(value) for key, value in obj.items()}
+            return result
         elif isinstance(obj, list):
             return [self._sanitize_object(item) for item in obj]
         elif isinstance(obj, str):

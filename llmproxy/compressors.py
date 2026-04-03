@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from types import ModuleType
+
+tiktoken: ModuleType | None = None
 try:
-    import tiktoken
+    import tiktoken as _tiktoken_module
+    tiktoken = _tiktoken_module
 except Exception:  # pragma: no cover
-    tiktoken = None
+    pass
 
 
 def count_tokens(text: str, model: str = "gpt-4") -> int:

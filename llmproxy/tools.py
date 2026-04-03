@@ -286,9 +286,11 @@ async def execute_tool(name: str, arguments: dict) -> str:
     try:
         if name in ASYNC_TOOLS:
             # Async function - await it
-            return await func(**arguments)
+            result = await func(**arguments)
+            return str(result) if result is not None else ""
         else:
             # Sync function - call directly
-            return func(**arguments)
+            result = func(**arguments)
+            return str(result) if result is not None else ""
     except Exception as exc:
         return f"Error executing {name}: {exc}"

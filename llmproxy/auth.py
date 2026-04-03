@@ -70,7 +70,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
             )
 
         # Add authenticated client info to request state
-        request.state.api_key = api_key[:8] + "..." if len(api_key) > 8 else api_key  # type: ignore[attr-defined]
+        request.state.api_key = api_key[:8] + "..." if len(api_key) > 8 else api_key  
 
         return await call_next(request)
 

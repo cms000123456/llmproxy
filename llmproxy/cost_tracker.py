@@ -250,6 +250,8 @@ class CostTracker:
                 "saved_at": time.time(),
             }
 
+            if self.storage_path is None:
+                return
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.storage_path, "w") as f:
                 json.dump(data, f, indent=2)
@@ -258,6 +260,8 @@ class CostTracker:
 
     def _load(self) -> None:
         """Load stats from disk."""
+        if self.storage_path is None:
+            return
         try:
             with open(self.storage_path) as f:
                 data = json.load(f)
@@ -316,4 +320,5 @@ def check_budget(api_key: str) -> bool:
     if not stats:
         return True
 
-    return stats["estimated_cost"] < budget
+    result: bool = stats["estimated_cost"] < budget
+    return result

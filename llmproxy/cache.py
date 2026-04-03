@@ -6,14 +6,14 @@ import hashlib
 import json
 import time
 from threading import Lock
-from typing import Optional
+from typing import Any
 
 
 class LRUCache:
     def __init__(self, max_size: int = 1000, ttl_seconds: int = 300):
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
-        self._store: dict[str, dict] = {}
+        self._store: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
 
     def _make_key(self, payload: dict) -> str:
@@ -21,7 +21,7 @@ class LRUCache:
         canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    def get(self, payload: dict) -> Optional[dict]:
+    def get(self, payload: dict) -> dict[str, Any] | None:
         key = self._make_key(payload)
         with self._lock:
             entry = self._store.get(key)
@@ -33,7 +33,8 @@ class LRUCache:
             # Move to end (most recently used)
             self._store.pop(key, None)
             self._store[key] = entry
-            return entry["value"]
+            result: dict[str, Any] = entry["value"]
+            return result
 
     def set(self, payload: dict, value: dict) -> None:
         key = self._make_key(payload)
@@ -46,7 +47,7 @@ class LRUCache:
                 del self._store[oldest]
             self._store[key] = {"ts": time.time(), "value": value}
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, int]:
         with self._lock:
             return {
                 "size": len(self._store),

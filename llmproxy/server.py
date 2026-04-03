@@ -28,6 +28,7 @@ from .logging_config import configure_logging, get_logger
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
 from .middleware.sanitize import SanitizationMiddleware
+from .storage import create_backend
 from .tracing import setup_tracing, get_tracer, trace_operation
 
 # Cache key generation

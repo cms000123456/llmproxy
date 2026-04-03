@@ -182,7 +182,7 @@ class Agent:
         """Get the file path for saving this session."""
         return _get_conversation_path(self.project_id, self.session_id)
 
-    def _load_or_resume(self):
+    def _load_or_resume(self) -> None:
         """Load existing session or show selector if multiple exist."""
         sessions = _list_sessions(self.project_id)
 
@@ -232,7 +232,7 @@ class Agent:
             self.session_id = sessions[int(choice) - 1]["session_id"]
             self._load()
 
-    def _load(self):
+    def _load(self) -> None:
         """Load conversation from disk."""
         try:
             path = self._get_save_path()
@@ -252,7 +252,7 @@ class Agent:
             self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             self._save()
 
-    def _save(self):
+    def _save(self) -> None:
         """Save conversation to disk."""
         try:
             path = self._get_save_path()
@@ -270,7 +270,7 @@ class Agent:
         except Exception as e:
             console.print(f"[dim red]Failed to save session: {e}[/dim red]")
 
-    def _update_usage(self, response):
+    def _update_usage(self, response: object) -> None:
         """Update token usage from API response."""
         usage = response.usage
         if usage:
@@ -319,7 +319,7 @@ class Agent:
         summary = " | ".join(parts) if parts else "No savings yet"
         return f"[dim green]Proxy saved: {summary} (~${saved_cost:.2f})[/dim green]"
 
-    def _print_tool_call(self, name: str, args: dict):
+    def _print_tool_call(self, name: str, args: dict) -> None:
         """Pretty-print a tool call with context about what it's doing."""
         if name == "read_file":
             path = args.get("path", "unknown")
@@ -365,7 +365,7 @@ class Agent:
             # Generic fallback
             console.print(f"[dim]→ Tool call: {name}({json.dumps(args)})[/dim]")
 
-    def _print_tool_result(self, name: str, result: str):
+    def _print_tool_result(self, name: str, result: str) -> None:
         """Print a brief summary of the tool result."""
         # Truncate result for display
         max_display_len = 200

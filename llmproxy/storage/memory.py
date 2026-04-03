@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from threading import Lock
-from typing import Optional
+from typing import Any
 
 from .base import StorageBackend
 
@@ -19,10 +19,10 @@ class MemoryBackend(StorageBackend):
     def __init__(self, max_size: int = 1000, ttl_seconds: int = 300):
         super().__init__(ttl_seconds)
         self.max_size = max_size
-        self._store: dict[str, dict] = {}
+        self._store: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
 
-    def get(self, key: str) -> Optional[dict]:
+    def get(self, key: str) -> dict[str, Any] | None:
         """Retrieve a value from memory cache.
 
         Args:
@@ -45,7 +45,8 @@ class MemoryBackend(StorageBackend):
             self._store.pop(key, None)
             self._store[key] = entry
 
-            return entry["value"]
+            result: dict[str, Any] = entry["value"]
+            return result
 
     def set(self, key: str, value: dict) -> None:
         """Store a value in memory cache.
@@ -85,7 +86,7 @@ class MemoryBackend(StorageBackend):
         with self._lock:
             self._store.clear()
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         """Get memory cache statistics.
 
         Returns:
