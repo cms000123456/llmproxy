@@ -1,7 +1,7 @@
 """Prompt compression strategies to fit within token budgets."""
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 try:
     import tiktoken
@@ -87,7 +87,9 @@ def _truncate_oldest(messages: list[dict], budget: int, model: str) -> list[dict
     return result
 
 
-def _summarize_oldest(messages: list[dict], budget: int, model: str, summary_model: str) -> list[dict]:
+def _summarize_oldest(
+    messages: list[dict], budget: int, model: str, summary_model: str
+) -> list[dict]:
     # Placeholder summarization: collapse oldest non-system/user/assistant roles into a summary placeholder
     # In a real deployment you'd call a cheap LLM here.
     result = _truncate_oldest(messages, budget, model)

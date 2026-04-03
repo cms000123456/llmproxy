@@ -3,16 +3,16 @@
 
 import asyncio
 import json
-import sys
 import os
-import time
-from httpx import AsyncClient, ASGITransport
+import sys
+
+from httpx import ASGITransport, AsyncClient
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the app - need to handle the lifespan context
-from llmproxy.server import app, MAX_BODY_SIZE
+from llmproxy.server import MAX_BODY_SIZE, app
 
 
 async def test_health_endpoint():
@@ -44,7 +44,7 @@ async def test_security_headers():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
-        
+
         assert response.headers["X-Content-Type-Options"] == "nosniff"
         assert response.headers["X-Frame-Options"] == "DENY"
         assert "X-XSS-Protection" in response.headers
@@ -60,13 +60,13 @@ async def test_body_size_limit():
         # Create a payload larger than MAX_BODY_SIZE
         large_content = "x" * (MAX_BODY_SIZE + 1000)
         payload = json.dumps({"messages": [{"role": "user", "content": large_content}]})
-        
+
         response = await client.post(
             "/v1/chat/completions",
             content=payload,
-            headers={"Content-Type": "application/json", "Content-Length": str(len(payload))}
+            headers={"Content-Type": "application/json", "Content-Length": str(len(payload))},
         )
-        
+
         assert response.status_code == 413
         assert "too large" in response.json()["error"].lower()
     print("✓ Body size limit works")
@@ -81,7 +81,7 @@ async def test_rate_limiting():
         for _ in range(105):  # Over the 100 req/min limit
             response = await client.get("/health")
             responses.append(response.status_code)
-        
+
         # Most should succeed, some should be rate limited
         assert 200 in responses
         # Note: Rate limiter uses in-memory store, so results may vary
@@ -106,7 +106,7 @@ async def test_proxy_invalid_json():
         response = await client.post(
             "/v1/chat/completions",
             content="not valid json",
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         # Should not crash, might return various status codes (including 429 from rate limiting)
         assert response.status_code in [200, 429, 502, 503, 504]
@@ -128,7 +128,7 @@ async def test_cache_headers():
 async def run_all_tests():
     """Run all server tests."""
     print("\n🧪 Running Server Tests\n")
-    
+
     await test_health_endpoint()
     await test_metrics_endpoint()
     await test_security_headers()
@@ -137,7 +137,7 @@ async def run_all_tests():
     await test_proxy_non_chat_endpoint()
     await test_proxy_invalid_json()
     await test_cache_headers()
-    
+
     print("\n✅ All server tests passed!\n")
 
 

@@ -3,6 +3,6 @@
 Exports the main Metrics class and the global METRICS instance.
 """
 
-from .metrics import Metrics, METRICS
+from .metrics import METRICS, Metrics
 
 __all__ = ["Metrics", "METRICS"]

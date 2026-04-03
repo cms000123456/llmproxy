@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Quick integration test for the proxy filtering/compression/cache logic."""
 
-import json
+from llmproxy.cache import LRUCache
+from llmproxy.compressors import compress_messages, count_message_tokens
 from llmproxy.config import settings
 from llmproxy.filters import filter_messages
-from llmproxy.compressors import compress_messages, count_message_tokens
-from llmproxy.cache import LRUCache
 
 
 def test_filtering():

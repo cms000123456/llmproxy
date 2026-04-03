@@ -2,10 +2,10 @@
 """Tests for message compression."""
 
 from llmproxy.compressors import (
-    count_tokens,
-    count_message_tokens,
-    compress_messages,
     _truncate_oldest,
+    compress_messages,
+    count_message_tokens,
+    count_tokens,
 )
 from llmproxy.config import Settings
 
@@ -41,10 +41,13 @@ def test_count_message_tokens():
 def test_count_message_tokens_with_list_content():
     """Test token counting with list content (vision models)."""
     messages = [
-        {"role": "user", "content": [
-            {"type": "text", "text": "Hello!"},
-            {"type": "image_url", "url": "http://example.com/image.png"},
-        ]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Hello!"},
+                {"type": "image_url", "url": "http://example.com/image.png"},
+            ],
+        },
     ]
     tokens = count_message_tokens(messages, "gpt-4")
     assert tokens > 0
@@ -64,13 +67,13 @@ def test_compress_messages_no_compression_needed():
     settings = Settings()
     settings.enable_compression = True
     settings.max_total_tokens = 100000
-    
+
     messages = [
         {"role": "system", "content": "You are helpful."},
         {"role": "user", "content": "Hello!"},
     ]
     result = compress_messages(messages, settings, "gpt-4")
-    
+
     assert len(result) == 2
     assert result[0]["role"] == "system"
     print("✓ No compression when under budget")
@@ -80,10 +83,10 @@ def test_compress_messages_disabled():
     """Test when compression is disabled."""
     settings = Settings()
     settings.enable_compression = False
-    
+
     messages = [{"role": "user", "content": "Hello!"}]
     result = compress_messages(messages, settings, "gpt-4")
-    
+
     assert result == messages
     print("✓ Compression disabled works")
 
@@ -97,10 +100,10 @@ def test_truncate_oldest_basic():
         {"role": "user", "content": "Question 2?"},
         {"role": "assistant", "content": "Answer 2."},
     ]
-    
+
     # Set a budget that forces truncation but not too small to avoid recursion
     result = _truncate_oldest(messages, budget=30, model="gpt-4")
-    
+
     # System message should be preserved
     assert result[0]["role"] == "system"
     # Last exchange should be preserved
@@ -116,10 +119,10 @@ def test_truncate_oldest_preserves_system():
         {"role": "user", "content": "Short."},
         {"role": "assistant", "content": "Short."},
     ]
-    
+
     # Use a reasonable budget that preserves system message
     result = _truncate_oldest(messages, budget=25, model="gpt-4")
-    
+
     assert result[0]["role"] == "system"
     assert result[0]["content"] == "Important system prompt."
     print("✓ System message preserved")
@@ -135,9 +138,9 @@ def test_truncate_oldest_preserves_tail():
         {"role": "user", "content": "Recent question"},
         {"role": "assistant", "content": "Recent answer"},
     ]
-    
+
     result = _truncate_oldest(messages, budget=30, model="gpt-4")
-    
+
     # Last user/assistant pair should be preserved
     assert result[-2]["content"] == "Recent question"
     assert result[-1]["content"] == "Recent answer"
@@ -167,10 +170,10 @@ def test_truncate_oldest_emergency_truncation():
         {"role": "user", "content": "Hi"},
         {"role": "assistant", "content": "Hello"},
     ]
-    
+
     # Small budget - should trigger emergency truncation but not recurse infinitely
     result = _truncate_oldest(messages, budget=15, model="gpt-4")
-    
+
     # Should have at least system message
     assert result[0]["role"] == "system"
     # Total tokens should be under budget (or close to it)
@@ -185,15 +188,15 @@ def test_compression_strategy_summarize():
     settings.enable_compression = True
     settings.compression_strategy = "summarize_oldest"
     settings.max_total_tokens = 50
-    
+
     messages = [
         {"role": "system", "content": "System"},
         {"role": "user", "content": "word " * 20},
         {"role": "assistant", "content": "word " * 20},
     ]
-    
+
     result = compress_messages(messages, settings, "gpt-4")
-    
+
     # Should not fail - falls back to truncate
     assert len(result) >= 1
     assert result[0]["role"] == "system"
@@ -206,11 +209,11 @@ def test_unknown_strategy_defaults_to_truncate():
     settings.enable_compression = True
     settings.compression_strategy = "unknown_strategy"
     settings.max_total_tokens = 50
-    
+
     messages = [
         {"role": "user", "content": "word " * 20},
     ]
-    
+
     # Should not raise, defaults to truncate
     result = compress_messages(messages, settings, "gpt-4")
     assert len(result) >= 0  # May be empty if budget too small

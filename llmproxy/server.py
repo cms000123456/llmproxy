@@ -3,13 +3,12 @@
 import asyncio
 import hashlib
 import json
-
 import random
 import signal
 import sys
-from typing import AsyncIterator
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
@@ -17,17 +16,17 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from . import templates
+from .auth import APIKeyAuthMiddleware
+from .compressors import compress_messages, count_message_tokens, count_tokens
 from .config import settings
+from .cost_tracker import COST_TRACKER, check_budget, record_api_key_usage
+from .filters import filter_messages
 from .logging_config import configure_logging, get_logger
-from .storage import create_backend, MemoryBackend
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
-from .filters import filter_messages
-from . import templates
-from .compressors import compress_messages, count_message_tokens, count_tokens
 from .middleware.sanitize import SanitizationMiddleware
-from .auth import APIKeyAuthMiddleware, APIKeyManager
-from .cost_tracker import COST_TRACKER, record_api_key_usage, check_budget
+from .storage import create_backend
 
 
 # Cache key generation
@@ -35,6 +34,7 @@ def _make_cache_key(payload: dict) -> str:
     """Generate a deterministic cache key from request payload."""
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
 
 # Configure structured logging
 configure_logging(log_level=settings.log_level, log_format=settings.log_format)
@@ -52,6 +52,7 @@ _inflight_lock = asyncio.Lock()
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
+
     async def dispatch(self, request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -64,13 +65,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     """Limit request body size to prevent memory exhaustion."""
+
     async def dispatch(self, request, call_next):
         if request.method in ("POST", "PUT", "PATCH"):
             content_length = request.headers.get("content-length")
             if content_length and int(content_length) > MAX_BODY_SIZE:
                 return JSONResponse(
-                    status_code=413,
-                    content={"error": "Request body too large (max 10MB)"}
+                    status_code=413, content={"error": "Request body too large (max 10MB)"}
                 )
         return await call_next(request)
 
@@ -78,39 +79,39 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
 # Simple in-memory rate limiter
 _rate_limit_store = {}
 RATE_LIMIT_REQUESTS = 100  # requests per window
-RATE_LIMIT_WINDOW = 60     # seconds
+RATE_LIMIT_WINDOW = 60  # seconds
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Simple rate limiting per client IP."""
+
     async def dispatch(self, request, call_next):
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
-        
+
         # Clean old entries and check current window
         window_start = now - RATE_LIMIT_WINDOW
         _rate_limit_store[client_ip] = [
-            ts for ts in _rate_limit_store.get(client_ip, [])
-            if ts > window_start
+            ts for ts in _rate_limit_store.get(client_ip, []) if ts > window_start
         ]
-        
+
         if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_REQUESTS:
             return JSONResponse(
-                status_code=429,
-                content={"error": "Rate limit exceeded. Try again later."}
+                status_code=429, content={"error": "Rate limit exceeded. Try again later."}
             )
-        
+
         _rate_limit_store[client_ip].append(now)
         return await call_next(request)
 
 
 class InflightRequestMiddleware(BaseHTTPMiddleware):
     """Track inflight requests for graceful shutdown."""
+
     async def dispatch(self, request, call_next):
         global _inflight_requests
         async with _inflight_lock:
             _inflight_requests += 1
-        
+
         try:
             response = await call_next(request)
             return response
@@ -132,17 +133,17 @@ def _kimi_code_headers() -> dict:
 
 def _calculate_backoff(attempt: int, base: float, max_wait: float) -> float:
     """Calculate exponential backoff with jitter.
-    
+
     Args:
         attempt: Current retry attempt (0-indexed)
         base: Base wait time in seconds
         max_wait: Maximum wait time in seconds
-    
+
     Returns:
         Wait time in seconds
     """
     # Exponential backoff: base * 2^attempt
-    wait = base * (2 ** attempt)
+    wait = base * (2**attempt)
     # Add jitter (±25%) to avoid thundering herd
     jitter = wait * 0.25 * (2 * random.random() - 1)
     wait = wait + jitter
@@ -159,16 +160,16 @@ async def _upstream_request_with_retry(
     content: bytes | None,
     max_retries: int,
     backoff_base: float,
-    max_wait: float
+    max_wait: float,
 ) -> httpx.Response:
     """Make an upstream request with exponential backoff retry logic.
-    
+
     Retries on:
     - Timeouts (httpx.TimeoutException)
     - Connection errors (httpx.ConnectError, httpx.NetworkError)
     - 5xx server errors (500, 502, 503, 504)
     - 429 rate limit responses (with Retry-After header support)
-    
+
     Args:
         http_client: Async HTTP client
         method: HTTP method
@@ -179,17 +180,17 @@ async def _upstream_request_with_retry(
         max_retries: Maximum number of retry attempts
         backoff_base: Base backoff time in seconds
         max_wait: Maximum wait time between retries
-    
+
     Returns:
         HTTP response
-    
+
     Raises:
         httpx.TimeoutException: If all retries exhausted
         httpx.ConnectError: If all retries exhausted
         httpx.HTTPStatusError: For non-retryable errors (4xx except 429)
     """
     last_exception = None
-    
+
     for attempt in range(max_retries + 1):
         try:
             response = await http_client.request(
@@ -199,7 +200,7 @@ async def _upstream_request_with_retry(
                 json=json_payload,
                 content=content,
             )
-            
+
             # Check if we should retry based on status code
             if response.status_code == 429:
                 # Rate limited - check for Retry-After header
@@ -211,47 +212,55 @@ async def _upstream_request_with_retry(
                         wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
                 else:
                     wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
-                
+
                 if attempt < max_retries:
-                    logger.warning(f"Rate limited (429), retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    logger.warning(
+                        f"Rate limited (429), retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})"
+                    )
                     await asyncio.sleep(wait_time)
                     continue
-            
+
             if 500 <= response.status_code < 600:
                 # Server error - retry
                 if attempt < max_retries:
                     wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
-                    logger.warning(f"Upstream server error {response.status_code}, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    logger.warning(
+                        f"Upstream server error {response.status_code}, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})"
+                    )
                     await asyncio.sleep(wait_time)
                     continue
-            
+
             # Success or non-retryable error
             return response
-            
+
         except httpx.TimeoutException as e:
             last_exception = e
             if attempt < max_retries:
                 wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
-                logger.warning(f"Upstream timeout, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                logger.warning(
+                    f"Upstream timeout, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})"
+                )
                 await asyncio.sleep(wait_time)
             else:
                 logger.error(f"Upstream timeout after {max_retries + 1} attempts")
                 raise
-                
+
         except (httpx.ConnectError, httpx.NetworkError) as e:
             last_exception = e
             if attempt < max_retries:
                 wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
-                logger.warning(f"Upstream connection error, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
+                logger.warning(
+                    f"Upstream connection error, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})"
+                )
                 await asyncio.sleep(wait_time)
             else:
                 logger.error(f"Upstream connection failed after {max_retries + 1} attempts")
                 raise
-    
+
     # Should not reach here, but just in case
     if last_exception:
         raise last_exception
-    
+
     raise RuntimeError("Unexpected error in retry logic")
 
 
@@ -263,20 +272,20 @@ async def _stream_upstream_response(
     json_payload: dict | None,
 ) -> tuple[int, dict, AsyncIterator[str]]:
     """Stream response from upstream LLM API.
-    
+
     For streaming requests, we don't use retry logic - we fail fast.
     The client should handle reconnection if needed.
-    
+
     Args:
         http_client: Async HTTP client
         method: HTTP method
         url: Request URL
         headers: Request headers
         json_payload: JSON payload (if any)
-    
+
     Returns:
         Tuple of (status_code, response_headers, chunk_iterator)
-    
+
     Raises:
         httpx.TimeoutException: If upstream times out
         httpx.ConnectError: If upstream connection fails
@@ -287,9 +296,9 @@ async def _stream_upstream_response(
         headers=headers,
         json=json_payload,
     )
-    
+
     response = await http_client.send(request, stream=True)
-    
+
     async def chunk_iterator():
         """Iterate over SSE chunks from upstream."""
         accumulated_content = []
@@ -299,10 +308,10 @@ async def _stream_upstream_response(
                 if _shutdown_event.is_set():
                     logger.info("Shutdown requested, closing stream")
                     break
-                
+
                 # Forward chunk as-is (it's already SSE formatted)
                 yield chunk
-                
+
                 # Accumulate content for metrics (optional optimization: skip for performance)
                 if chunk.startswith("data: ") and chunk != "data: [DONE]\n\n":
                     try:
@@ -315,26 +324,70 @@ async def _stream_upstream_response(
                         pass
         finally:
             await response.aclose()
-            
+
             # Record metrics after stream completes
             if accumulated_content:
-                content = "".join(accumulated_content)
+                # Content was accumulated for potential metrics use
                 # Note: We don't have the model here, would need to pass it in
                 # For now, metrics are recorded at a higher level
-    
+                pass
+
     # Extract headers to forward
     response_headers = {
         "content-type": response.headers.get("content-type", "text/event-stream"),
         "cache-control": "no-cache",
         "x-cache": "MISS",
     }
-    
+
     return response.status_code, response_headers, chunk_iterator()
 
 
 # Shared state
 _http_client: httpx.AsyncClient | None = None
+_experimental_http_client: httpx.AsyncClient | None = None
 _cache = None
+
+# A/B testing variant storage (for sticky sessions)
+_ab_test_variants: dict[str, str] = {}
+
+# A/B testing metrics
+_ab_test_metrics: dict[str, dict[str, int]] = {
+    "control": {"requests": 0, "errors": 0, "latency_ms": 0},
+    "experimental": {"requests": 0, "errors": 0, "latency_ms": 0},
+}
+
+
+def _get_ab_test_variant(api_key: str | None) -> str:
+    """Determine which variant to use for A/B testing.
+    
+    Args:
+        api_key: The client's API key (used for sticky sessions)
+        
+    Returns:
+        "control" or "experimental"
+    """
+    if not settings.ab_test_enabled:
+        return "control"
+    
+    if _experimental_http_client is None:
+        return "control"
+    
+    # Use API key for sticky sessions, or "anonymous" if no key
+    session_key = api_key or "anonymous"
+    
+    # Check if we already assigned a variant to this session
+    if settings.ab_test_sticky_sessions and session_key in _ab_test_variants:
+        return _ab_test_variants[session_key]
+    
+    # Assign variant based on traffic split
+    import random
+    variant = "experimental" if random.random() < settings.ab_test_traffic_split else "control"
+    
+    # Store for sticky sessions
+    if settings.ab_test_sticky_sessions:
+        _ab_test_variants[session_key] = variant
+    
+    return variant
 
 
 def _handle_signal(sig, frame):
@@ -354,7 +407,7 @@ async def _wait_for_inflight_requests(timeout: float = GRACEFUL_SHUTDOWN_TIMEOUT
                 return True
         logger.info(f"Waiting for {_inflight_requests} inflight requests to complete...")
         await asyncio.sleep(0.5)
-    
+
     async with _inflight_lock:
         if _inflight_requests > 0:
             logger.warning(f"Timeout reached, {_inflight_requests} requests still inflight")
@@ -364,7 +417,7 @@ async def _wait_for_inflight_requests(timeout: float = GRACEFUL_SHUTDOWN_TIMEOUT
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client, _cache
-    
+
     # Setup signal handlers for graceful shutdown
     if sys.platform != "win32":
         loop = asyncio.get_event_loop()
@@ -374,10 +427,10 @@ async def lifespan(app: FastAPI):
         # Windows doesn't support add_signal_handler
         signal.signal(signal.SIGINT, _handle_signal)
         signal.signal(signal.SIGTERM, _handle_signal)
-    
+
     # Startup
     logger.info("Starting LLM Proxy server...")
-    
+
     # Avoid double /v1 when base_url already ends with it and client sends /v1/chat/completions
     base_url = settings.upstream_base_url
     if base_url.rstrip("/").endswith("/v1"):
@@ -400,7 +453,7 @@ async def lifespan(app: FastAPI):
                 max_size=settings.cache_max_size,
                 ttl_seconds=settings.cache_ttl_seconds,
                 redis_url=settings.redis_url,
-                redis_key_prefix=settings.redis_key_prefix
+                redis_key_prefix=settings.redis_key_prefix,
             )
             logger.info(f"Cache backend: {settings.cache_backend}")
         except Exception as e:
@@ -408,33 +461,36 @@ async def lifespan(app: FastAPI):
             _cache = None
     else:
         _cache = None
-    
+
     logger.info(f"Connected to upstream: {base_url}")
-    logger.info(f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s")
-    logger.info(f"Retry config: max_retries={settings.max_retries}, backoff={settings.retry_backoff}s")
-    logger.info(f"Streaming support: enabled")
-    
+    logger.info(
+        f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s"
+    )
+    logger.info(
+        f"Retry config: max_retries={settings.max_retries}, backoff={settings.retry_backoff}s"
+    )
+    logger.info("Streaming support: enabled")
 
     # Initialize template engine
     templates.init_template_engine(settings.prompt_templates)
     yield
-    
+
     # Shutdown
     logger.info("Shutting down LLM Proxy server...")
-    
+
     # Wait for inflight requests to complete
     await _wait_for_inflight_requests(GRACEFUL_SHUTDOWN_TIMEOUT)
-    
+
     # Close HTTP client
     if _http_client:
         logger.info("Closing HTTP client connections...")
         await _http_client.aclose()
-    
+
     # Log final metrics
     if _cache:
         stats = _cache.stats()
         logger.info(f"Cache stats at shutdown: {stats}")
-    
+
     summary = METRICS.summary()
     logger.info(f"Final metrics: {summary}")
     logger.info("Shutdown complete")
@@ -463,11 +519,13 @@ async def metrics_endpoint():
     cache_stats = _cache.stats() if _cache else {}
     return {"metrics": summary, "cache": cache_stats}
 
+
 @app.get("/metrics/prometheus", response_class=Response)
 async def prometheus_metrics_endpoint():
     """Prometheus-compatible metrics endpoint."""
     metrics_text = get_prometheus_metrics_text()
     return Response(content=metrics_text, media_type="text/plain")
+
 
 @app.get("/costs")
 async def costs_endpoint():
@@ -477,10 +535,29 @@ async def costs_endpoint():
     return {"summary": summary, "details": details}
 
 
+@app.get("/ab-test/status")
+async def ab_test_status_endpoint():
+    """Get A/B testing status and configuration."""
+    return {
+        "enabled": settings.ab_test_enabled,
+        "configuration": {
+            "control_upstream": settings.upstream_base_url,
+            "experimental_upstream": (
+                settings.experimental_upstream_base_url
+                if _experimental_http_client else None
+            ),
+            "traffic_split": settings.ab_test_traffic_split,
+            "sticky_sessions": settings.ab_test_sticky_sessions,
+        },
+        "metrics": _ab_test_metrics,
+    }
+
+
 @app.get("/templates")
 async def list_templates_endpoint():
     """List all available prompt templates."""
     from .templates import get_template_engine
+
     engine = get_template_engine()
     return {"templates": engine.list_templates()}
 
@@ -488,7 +565,7 @@ async def list_templates_endpoint():
 @app.post("/templates/render")
 async def render_template_endpoint(request: Request):
     """Render a prompt template with variables.
-    
+
     Request body:
     {
         "template": "code_review",
@@ -499,32 +576,27 @@ async def render_template_endpoint(request: Request):
     }
     """
     from .templates import get_template_engine
+
     body = await request.json()
-    
+
     template_name = body.get("template")
     variables = body.get("variables", {})
-    
+
     if not template_name:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Missing required field: template"}
-        )
-    
+        return JSONResponse(status_code=400, content={"error": "Missing required field: template"})
+
     try:
         engine = get_template_engine()
         result = engine.render(template_name, variables)
         return result
     except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": str(e)}
-        )
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 @app.post("/templates/validate")
 async def validate_template_endpoint(request: Request):
     """Validate template variables.
-    
+
     Request body:
     {
         "template": "code_review",
@@ -532,33 +604,25 @@ async def validate_template_endpoint(request: Request):
             "language": "python"
         }
     }
-    
+
     Returns missing required variables (those without defaults).
     """
     from .templates import get_template_engine
+
     body = await request.json()
-    
+
     template_name = body.get("template")
     variables = body.get("variables", {})
-    
+
     if not template_name:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Missing required field: template"}
-        )
-    
+        return JSONResponse(status_code=400, content={"error": "Missing required field: template"})
+
     try:
         engine = get_template_engine()
         missing = engine.validate_variables(template_name, variables)
-        return {
-            "valid": len(missing) == 0,
-            "missing_variables": missing
-        }
+        return {"valid": len(missing) == 0, "missing_variables": missing}
     except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": str(e)}
-        )
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
@@ -574,7 +638,7 @@ async def proxy(request: Request, path: str):
     # Note: We check if authorization header contains one of our api_keys
     auth_header = headers.get("authorization", "")
     api_keys_set = set(settings.api_keys)
-    
+
     if auth_header.startswith("Bearer "):
         provided_key = auth_header[7:].strip()
         if provided_key in api_keys_set:
@@ -588,7 +652,7 @@ async def proxy(request: Request, path: str):
         provided = auth_header[7:].strip()
         if provided in api_keys_set:
             client_api_key = provided
-    
+
     # Check budget before processing
     if client_api_key and settings.enable_cost_tracking:
         if not check_budget(client_api_key):
@@ -596,8 +660,8 @@ async def proxy(request: Request, path: str):
                 status_code=429,
                 content={
                     "error": "Budget exceeded",
-                    "message": "This API key has exceeded its budget. Contact administrator."
-                }
+                    "message": "This API key has exceeded its budget. Contact administrator.",
+                },
             )
     elif settings.upstream_api_key:
         # No auth header, use upstream key
@@ -609,7 +673,7 @@ async def proxy(request: Request, path: str):
         provided = auth_header[7:].strip()
         if provided in api_keys_set:
             client_api_key = provided
-    
+
     # Check budget before processing
     if client_api_key and settings.enable_cost_tracking:
         if not check_budget(client_api_key):
@@ -617,8 +681,8 @@ async def proxy(request: Request, path: str):
                 status_code=429,
                 content={
                     "error": "Budget exceeded",
-                    "message": "This API key has exceeded its budget. Contact administrator."
-                }
+                    "message": "This API key has exceeded its budget. Contact administrator.",
+                },
             )
 
     # Kimi Code compatibility: inject agent headers and strip client fingerprints
@@ -637,8 +701,10 @@ async def proxy(request: Request, path: str):
             pass
 
     # Only intercept chat completions for filtering/compression/cache
-    is_chat_completion = path in ("chat/completions", "v1/chat/completions") or path.endswith("/chat/completions")
-    
+    is_chat_completion = path in ("chat/completions", "v1/chat/completions") or path.endswith(
+        "/chat/completions"
+    )
+
     # Check if this is a streaming request
     is_streaming = is_chat_completion and payload.get("stream") == True
 
@@ -655,7 +721,7 @@ async def proxy(request: Request, path: str):
         messages = compress_messages(messages, settings, payload.get("model", "gpt-4"))
 
         transformed_payload["messages"] = messages
-        
+
         # Calculate actual tokens sent (after filtering/compression)
         final_token_count = count_message_tokens(messages, payload.get("model", "gpt-4"))
         # Tokens saved by filtering/compression
@@ -668,9 +734,9 @@ async def proxy(request: Request, path: str):
         # Streaming requests bypass cache and use different handling
         if _http_client is None:
             return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
-        
+
         start = time.perf_counter()
-        
+
         try:
             # For streaming, we don't retry - fail fast and let client reconnect
             status_code, response_headers, chunk_iterator = await _stream_upstream_response(
@@ -680,7 +746,7 @@ async def proxy(request: Request, path: str):
                 headers=headers,
                 json_payload=transformed_payload if transformed_payload else None,
             )
-            
+
             # Return streaming response
             return StreamingResponse(
                 content=chunk_iterator,
@@ -690,15 +756,17 @@ async def proxy(request: Request, path: str):
                     "Cache-Control": "no-cache",
                     "X-Cache": "MISS",
                     "X-Streaming": "true",
-                }
+                },
             )
-            
+
         except httpx.TimeoutException:
             return JSONResponse(status_code=504, content={"error": "Upstream timeout"})
         except httpx.ConnectError:
             return JSONResponse(status_code=502, content={"error": "Upstream connection failed"})
         except httpx.NetworkError as e:
-            return JSONResponse(status_code=502, content={"error": f"Upstream network error: {str(e)}"})
+            return JSONResponse(
+                status_code=502, content={"error": f"Upstream network error: {str(e)}"}
+            )
 
     # Non-streaming path with caching and retry logic
     # Cache lookup
@@ -717,11 +785,11 @@ async def proxy(request: Request, path: str):
             upstream_tokens=original_token_count,
             downstream_tokens=count_tokens(
                 response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
-                payload.get("model", "gpt-4")
+                payload.get("model", "gpt-4"),
             ),
             cached=True,
             tokens_saved_filtering=tokens_saved_filtering,
-            latency_ms=cached_latency
+            latency_ms=cached_latency,
         )
         # Track cost per API key
         if client_api_key and settings.enable_cost_tracking:
@@ -730,13 +798,13 @@ async def proxy(request: Request, path: str):
                 upstream_tokens=original_token_count,
                 downstream_tokens=count_tokens(
                     response_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
-                    payload.get("model", "gpt-4")
-                )
+                    payload.get("model", "gpt-4"),
+                ),
             )
         return Response(
             content=response_body,
             status_code=200,
-            headers={"Content-Type": "application/json", "X-Cache": "HIT"}
+            headers={"Content-Type": "application/json", "X-Cache": "HIT"},
         )
 
     # Proxy to upstream with retry logic
@@ -753,12 +821,14 @@ async def proxy(request: Request, path: str):
             content=body_bytes if not transformed_payload else None,
             max_retries=settings.max_retries,
             backoff_base=settings.retry_backoff,
-            max_wait=settings.retry_max_wait
+            max_wait=settings.retry_max_wait,
         )
     except httpx.TimeoutException:
         return JSONResponse(status_code=504, content={"error": "Upstream timeout after retries"})
     except httpx.ConnectError:
-        return JSONResponse(status_code=502, content={"error": "Upstream connection failed after retries"})
+        return JSONResponse(
+            status_code=502, content={"error": "Upstream connection failed after retries"}
+        )
     except httpx.NetworkError as e:
         return JSONResponse(status_code=502, content={"error": f"Upstream network error: {str(e)}"})
 
@@ -786,14 +856,14 @@ async def proxy(request: Request, path: str):
         downstream_tokens=downstream_tokens,
         cached=False,
         tokens_saved_filtering=tokens_saved_filtering,
-        latency_ms=latency
+        latency_ms=latency,
     )
     # Track cost per API key
     if client_api_key and settings.enable_cost_tracking:
         record_api_key_usage(
             client_api_key,
             upstream_tokens=original_token_count,
-            downstream_tokens=downstream_tokens
+            downstream_tokens=downstream_tokens,
         )
 
     # Forward all response headers except encoding/length (we're sending raw content)
@@ -804,7 +874,5 @@ async def proxy(request: Request, path: str):
     response_headers["X-Cache"] = "MISS"
 
     return Response(
-        content=response_body,
-        status_code=upstream_response.status_code,
-        headers=response_headers
+        content=response_body, status_code=upstream_response.status_code, headers=response_headers
     )

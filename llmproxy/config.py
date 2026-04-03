@@ -1,13 +1,23 @@
 """Configuration for LLM Proxy."""
 
+from typing import Any, Dict, List
+
 from pydantic_settings import BaseSettings
-from typing import Optional, List, Dict, Any
 
 
 class Settings(BaseSettings):
-    # Upstream API
+    # Upstream API (Control - primary upstream)
     upstream_base_url: str = "https://api.moonshot.cn/v1"
     upstream_api_key: str = ""
+
+    # A/B Testing Configuration
+    ab_test_enabled: bool = False  # Enable A/B testing between control and experimental upstreams
+    experimental_upstream_base_url: str = (
+        ""  # Experimental upstream URL (e.g., different model/version)
+    )
+    experimental_upstream_api_key: str = ""  # Optional separate API key for experimental
+    ab_test_traffic_split: float = 0.1  # Fraction of traffic to route to experimental (0.0 to 1.0)
+    ab_test_sticky_sessions: bool = True  # Route same client to same variant (based on API key)
 
     # Proxy server
     host: str = "0.0.0.0"
@@ -33,8 +43,8 @@ class Settings(BaseSettings):
     # Ollama local LLM integration
     ollama_base_url: str = "http://localhost:11434"
     ollama_api_key: str = ""  # Optional API key for Ollama (if behind auth proxy)
-    ollama_model: str = "llama3.2"          # lightweight model for local grunt work
-    ollama_enable_compression: bool = True   # use Ollama to summarize old context
+    ollama_model: str = "llama3.2"  # lightweight model for local grunt work
+    ollama_enable_compression: bool = True  # use Ollama to summarize old context
     ollama_enable_relevance_filter: bool = False  # drop low-relevance older messages via Ollama
     ollama_relevance_threshold: float = 0.5  # keep messages scored >= this (0-1)
 
@@ -65,7 +75,7 @@ class Settings(BaseSettings):
 
     # Cost tracking
     enable_cost_tracking: bool = True
-    cost_upstream_price: float = 0.01   # $ per 1K tokens
+    cost_upstream_price: float = 0.01  # $ per 1K tokens
     cost_downstream_price: float = 0.03  # $ per 1K tokens
     cost_storage_path: str = "data/cost_tracker.json"
 

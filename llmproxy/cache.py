@@ -46,4 +46,8 @@ class LRUCache:
 
     def stats(self) -> dict:
         with self._lock:
-            return {"size": len(self._store), "max_size": self.max_size, "ttl_seconds": self.ttl_seconds}
+            return {
+                "size": len(self._store),
+                "max_size": self.max_size,
+                "ttl_seconds": self.ttl_seconds,
+            }

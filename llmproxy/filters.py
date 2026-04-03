@@ -1,7 +1,6 @@
 """Request filtering strategies."""
 
 import base64
-import re
 from typing import Any
 
 
@@ -16,7 +15,10 @@ def is_base64_string(s: str) -> bool:
 
 def truncate_message(content: Any, max_length: int) -> Any:
     if isinstance(content, str) and len(content) > max_length:
-        return content[:max_length] + f"\n\n[... truncated from {len(content)} chars to {max_length} ...]"
+        return (
+            content[:max_length]
+            + f"\n\n[... truncated from {len(content)} chars to {max_length} ...]"
+        )
     if isinstance(content, list):
         # Handle content arrays (e.g., vision models)
         out = []
@@ -24,7 +26,10 @@ def truncate_message(content: Any, max_length: int) -> Any:
             if isinstance(item, dict) and item.get("type") == "text":
                 text = item.get("text", "")
                 if len(text) > max_length:
-                    text = text[:max_length] + f"\n\n[... truncated from {len(text)} chars to {max_length} ...]"
+                    text = (
+                        text[:max_length]
+                        + f"\n\n[... truncated from {len(text)} chars to {max_length} ...]"
+                    )
                 out.append({**item, "text": text})
             else:
                 out.append(item)

@@ -9,14 +9,14 @@ import structlog
 
 def configure_logging(log_level: str = "INFO", log_format: str = "console") -> None:
     """Configure structured logging with structlog.
-    
+
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_format: Output format - "console" (colored, human-readable) or "json" (structured)
     """
     # Convert string level to int
     level = getattr(logging, log_level.upper(), logging.INFO)
-    
+
     # Shared processors for both console and JSON formats
     shared_processors: list[Any] = [
         # Add timestamp in ISO format
@@ -34,7 +34,7 @@ def configure_logging(log_level: str = "INFO", log_format: str = "console") -> N
         # Decode unicode
         structlog.processors.UnicodeDecoder(),
     ]
-    
+
     if log_format == "json":
         # JSON format for production/logging systems
         formatter = structlog.stdlib.ProcessorFormatter(
@@ -47,20 +47,21 @@ def configure_logging(log_level: str = "INFO", log_format: str = "console") -> N
             processor=structlog.dev.ConsoleRenderer(colors=True),
             foreign_pre_chain=shared_processors,
         )
-    
+
     # Configure standard library logging
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
-    
+
     # Set up root logger
     root_logger = logging.getLogger()
     root_logger.handlers = []
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
-    
+
     # Configure structlog
     structlog.configure(
-        processors=shared_processors + [
+        processors=shared_processors
+        + [
             # Render to the format specified above
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
@@ -73,13 +74,13 @@ def configure_logging(log_level: str = "INFO", log_format: str = "console") -> N
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a structured logger instance.
-    
+
     Args:
         name: Logger name (typically __name__)
-        
+
     Returns:
         A BoundLogger with structured logging capabilities
-        
+
     Example:
         >>> from llmproxy.logging_config import get_logger
         >>> logger = get_logger(__name__)

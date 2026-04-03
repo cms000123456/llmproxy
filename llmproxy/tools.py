@@ -1,12 +1,9 @@
 """Tool implementations for the coding agent CLI."""
 
-import asyncio
 import fnmatch
-import json
 import os
 import subprocess
-import time
-from typing import Any, Optional
+from typing import Optional
 
 import aiofiles
 from rich.console import Console
@@ -35,14 +32,14 @@ async def read_file(path: str, offset: int = 1, limit: int = 100) -> str:
             return f"Error: file not found: {path}"
         if os.path.isdir(target):
             return f"Error: {path} is a directory"
-        
-        async with aiofiles.open(target, "r", encoding="utf-8", errors="ignore") as f:
+
+        async with aiofiles.open(target, encoding="utf-8", errors="ignore") as f:
             lines = await f.readlines()
-        
+
         start = max(0, offset - 1)
         end = min(len(lines), start + limit)
         selected = lines[start:end]
-        header = f"--- {path} (lines {start+1}-{end} of {len(lines)}) ---\n"
+        header = f"--- {path} (lines {start + 1}-{end} of {len(lines)}) ---\n"
         return header + "".join(selected)
     except Exception as exc:
         return f"Error reading {path}: {exc}"
@@ -55,10 +52,10 @@ async def write_file(path: str, content: str, mode: str = "overwrite") -> str:
         # Create directories synchronously (fast operation)
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
         file_mode = "a" if mode == "append" else "w"
-        
+
         async with aiofiles.open(target, file_mode, encoding="utf-8") as f:
             await f.write(content)
-        
+
         return f"Success: wrote to {path} ({mode})"
     except Exception as exc:
         return f"Error writing {path}: {exc}"
@@ -98,7 +95,7 @@ def list_directory(path: str = ".") -> str:
         target = _sanitize_path(path)
         if not os.path.isdir(target):
             return f"Error: {path} is not a directory"
-        
+
         entries = os.listdir(target)
         lines = [f"Directory: {path}"]
         for e in sorted(entries):
@@ -116,7 +113,7 @@ async def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str
     try:
         target = _sanitize_path(path)
         matches = []
-        
+
         # Build file list synchronously (directory traversal)
         if os.path.isfile(target):
             files = [target]
@@ -127,11 +124,11 @@ async def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str
                     if glob and not fnmatch.fnmatch(name, glob):
                         continue
                     files.append(os.path.join(root, name))
-        
+
         # Read files asynchronously
         for fp in files[:50]:  # limit scanned files
             try:
-                async with aiofiles.open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                async with aiofiles.open(fp, encoding="utf-8", errors="ignore") as f:
                     for i, line in enumerate(await f.readlines(), 1):
                         if pattern in line:
                             rel = os.path.relpath(fp, os.getcwd())
@@ -142,7 +139,7 @@ async def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str
                 continue
             if len(matches) >= 100:
                 break
-        
+
         if not matches:
             return f"No matches for '{pattern}'"
         return "\n".join(matches[:100])
@@ -161,8 +158,16 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Relative path to the file"},
-                    "offset": {"type": "integer", "description": "Line number to start from (1-indexed)", "default": 1},
-                    "limit": {"type": "integer", "description": "Max lines to read", "default": 100},
+                    "offset": {
+                        "type": "integer",
+                        "description": "Line number to start from (1-indexed)",
+                        "default": 1,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lines to read",
+                        "default": 100,
+                    },
                 },
                 "required": ["path"],
             },
@@ -178,7 +183,11 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "path": {"type": "string", "description": "Relative path to the file"},
                     "content": {"type": "string", "description": "Text content to write"},
-                    "mode": {"type": "string", "enum": ["overwrite", "append"], "default": "overwrite"},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["overwrite", "append"],
+                        "default": "overwrite",
+                    },
                 },
                 "required": ["path", "content"],
             },
@@ -193,7 +202,11 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell command to run"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 30},
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds",
+                        "default": 30,
+                    },
                 },
                 "required": ["command"],
             },
@@ -207,7 +220,11 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Relative path to the directory", "default": "."},
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the directory",
+                        "default": ".",
+                    },
                 },
                 "required": [],
             },
@@ -222,8 +239,16 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Text pattern to search for"},
-                    "path": {"type": "string", "description": "Relative path to search in", "default": "."},
-                    "glob": {"type": "string", "description": "Optional file glob filter, e.g. *.py", "default": None},
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to search in",
+                        "default": ".",
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Optional file glob filter, e.g. *.py",
+                        "default": None,
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -249,13 +274,13 @@ ASYNC_TOOLS = {"read_file", "write_file", "grep"}
 
 async def execute_tool(name: str, arguments: dict) -> str:
     """Execute a tool by name with the given arguments.
-    
+
     Handles both sync and async tool functions.
     """
     func = TOOL_MAP.get(name)
     if not func:
         return f"Error: unknown tool {name}"
-    
+
     try:
         if name in ASYNC_TOOLS:
             # Async function - await it

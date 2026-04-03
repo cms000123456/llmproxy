@@ -1,6 +1,5 @@
 """Lightweight metrics tracking."""
 
-import time
 from dataclasses import dataclass, field
 from threading import Lock
 
@@ -23,10 +22,10 @@ class Metrics:
         downstream_tokens: int,
         latency_ms: float,
         cached: bool = False,
-        tokens_saved_filtering: int = 0
+        tokens_saved_filtering: int = 0,
     ):
         """Record request metrics.
-        
+
         Args:
             upstream_tokens: Number of tokens sent upstream (after filtering/compression)
             downstream_tokens: Number of tokens in the response

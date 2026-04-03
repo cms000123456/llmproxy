@@ -2,9 +2,8 @@
 """Tests for retry logic with exponential backoff."""
 
 import asyncio
-import json
-import sys
 import os
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -55,15 +54,17 @@ def test_calculate_backoff_jitter():
 async def test_retry_on_timeout():
     """Test retry on timeout exception."""
     mock_client = MagicMock()
-    
-    # First 2 calls timeout, 3rd succeeds
-    mock_client.request = AsyncMock(side_effect=[
-        httpx.TimeoutException("Timeout"),
-        httpx.TimeoutException("Timeout"),
-        MagicMock(status_code=200, headers={}, content=b'{"ok": true}')
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    # First 2 calls timeout, 3rd succeeds
+    mock_client.request = AsyncMock(
+        side_effect=[
+            httpx.TimeoutException("Timeout"),
+            httpx.TimeoutException("Timeout"),
+            MagicMock(status_code=200, headers={}, content=b'{"ok": true}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -73,7 +74,7 @@ async def test_retry_on_timeout():
             content=None,
             max_retries=3,
             backoff_base=0.1,  # Fast for testing
-            max_wait=1.0
+            max_wait=1.0,
         )
 
     assert response.status_code == 200
@@ -86,14 +87,16 @@ async def test_retry_on_timeout():
 async def test_retry_on_connect_error():
     """Test retry on connection error."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        httpx.ConnectError("Connection refused"),
-        httpx.ConnectError("Connection refused"),
-        MagicMock(status_code=200, headers={}, content=b'{"ok": true}')
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    mock_client.request = AsyncMock(
+        side_effect=[
+            httpx.ConnectError("Connection refused"),
+            httpx.ConnectError("Connection refused"),
+            MagicMock(status_code=200, headers={}, content=b'{"ok": true}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -103,7 +106,7 @@ async def test_retry_on_connect_error():
             content=None,
             max_retries=3,
             backoff_base=0.1,
-            max_wait=1.0
+            max_wait=1.0,
         )
 
     assert response.status_code == 200
@@ -115,14 +118,16 @@ async def test_retry_on_connect_error():
 async def test_retry_on_server_error():
     """Test retry on 5xx server errors."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        MagicMock(status_code=502, headers={}, content=b'{"error": "bad gateway"}'),
-        MagicMock(status_code=503, headers={}, content=b'{"error": "service unavailable"}'),
-        MagicMock(status_code=200, headers={}, content=b'{"ok": true}')
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    mock_client.request = AsyncMock(
+        side_effect=[
+            MagicMock(status_code=502, headers={}, content=b'{"error": "bad gateway"}'),
+            MagicMock(status_code=503, headers={}, content=b'{"error": "service unavailable"}'),
+            MagicMock(status_code=200, headers={}, content=b'{"ok": true}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -132,7 +137,7 @@ async def test_retry_on_server_error():
             content=None,
             max_retries=3,
             backoff_base=0.1,
-            max_wait=1.0
+            max_wait=1.0,
         )
 
     assert response.status_code == 200
@@ -144,13 +149,17 @@ async def test_retry_on_server_error():
 async def test_retry_on_rate_limit_with_header():
     """Test retry on 429 with Retry-After header."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        MagicMock(status_code=429, headers={"retry-after": "1"}, content=b'{"error": "rate limited"}'),
-        MagicMock(status_code=200, headers={}, content=b'{"ok": true}')
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    mock_client.request = AsyncMock(
+        side_effect=[
+            MagicMock(
+                status_code=429, headers={"retry-after": "1"}, content=b'{"error": "rate limited"}'
+            ),
+            MagicMock(status_code=200, headers={}, content=b'{"ok": true}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -160,7 +169,7 @@ async def test_retry_on_rate_limit_with_header():
             content=None,
             max_retries=3,
             backoff_base=0.1,
-            max_wait=1.0
+            max_wait=1.0,
         )
 
     assert response.status_code == 200
@@ -174,13 +183,15 @@ async def test_retry_on_rate_limit_with_header():
 async def test_retry_on_rate_limit_without_header():
     """Test retry on 429 without Retry-After header uses exponential backoff."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        MagicMock(status_code=429, headers={}, content=b'{"error": "rate limited"}'),
-        MagicMock(status_code=200, headers={}, content=b'{"ok": true}')
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    mock_client.request = AsyncMock(
+        side_effect=[
+            MagicMock(status_code=429, headers={}, content=b'{"error": "rate limited"}'),
+            MagicMock(status_code=200, headers={}, content=b'{"ok": true}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -190,7 +201,7 @@ async def test_retry_on_rate_limit_without_header():
             content=None,
             max_retries=3,
             backoff_base=0.1,
-            max_wait=1.0
+            max_wait=1.0,
         )
 
     assert response.status_code == 200
@@ -203,12 +214,10 @@ async def test_retry_on_rate_limit_without_header():
 async def test_no_retry_on_4xx_errors():
     """Test that 4xx errors (except 429) are not retried."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(return_value=MagicMock(
-        status_code=400, 
-        headers={}, 
-        content=b'{"error": "bad request"}'
-    ))
+
+    mock_client.request = AsyncMock(
+        return_value=MagicMock(status_code=400, headers={}, content=b'{"error": "bad request"}')
+    )
 
     response = await _upstream_request_with_retry(
         http_client=mock_client,
@@ -219,7 +228,7 @@ async def test_no_retry_on_4xx_errors():
         content=None,
         max_retries=3,
         backoff_base=0.1,
-        max_wait=1.0
+        max_wait=1.0,
     )
 
     assert response.status_code == 400
@@ -231,15 +240,17 @@ async def test_no_retry_on_4xx_errors():
 async def test_max_retries_exhausted_timeout():
     """Test that exception is raised when max retries exhausted (timeout)."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        httpx.TimeoutException("Timeout"),
-        httpx.TimeoutException("Timeout"),
-        httpx.TimeoutException("Timeout"),
-        httpx.TimeoutException("Timeout"),
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock):
+    mock_client.request = AsyncMock(
+        side_effect=[
+            httpx.TimeoutException("Timeout"),
+            httpx.TimeoutException("Timeout"),
+            httpx.TimeoutException("Timeout"),
+            httpx.TimeoutException("Timeout"),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         try:
             await _upstream_request_with_retry(
                 http_client=mock_client,
@@ -250,7 +261,7 @@ async def test_max_retries_exhausted_timeout():
                 content=None,
                 max_retries=3,  # 3 retries + 1 initial = 4 total
                 backoff_base=0.01,
-                max_wait=0.1
+                max_wait=0.1,
             )
             assert False, "Should have raised TimeoutException"
         except httpx.TimeoutException:
@@ -264,15 +275,17 @@ async def test_max_retries_exhausted_timeout():
 async def test_max_retries_exhausted_server_error():
     """Test that response is returned when max retries exhausted (5xx)."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
-        MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
-        MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
-        MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock):
+    mock_client.request = AsyncMock(
+        side_effect=[
+            MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
+            MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
+            MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
+            MagicMock(status_code=503, headers={}, content=b'{"error": "unavailable"}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -282,7 +295,7 @@ async def test_max_retries_exhausted_server_error():
             content=None,
             max_retries=3,
             backoff_base=0.01,
-            max_wait=0.1
+            max_wait=0.1,
         )
 
     assert response.status_code == 503
@@ -294,14 +307,14 @@ async def test_max_retries_exhausted_server_error():
 async def test_success_on_first_attempt():
     """Test successful request on first attempt (no retries)."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(return_value=MagicMock(
-        status_code=200, 
-        headers={}, 
-        content=b'{"choices": [{"message": {"content": "Hello"}}]}'
-    ))
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    mock_client.request = AsyncMock(
+        return_value=MagicMock(
+            status_code=200, headers={}, content=b'{"choices": [{"message": {"content": "Hello"}}]}'
+        )
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -311,7 +324,7 @@ async def test_success_on_first_attempt():
             content=None,
             max_retries=3,
             backoff_base=2.0,
-            max_wait=60.0
+            max_wait=60.0,
         )
 
     assert response.status_code == 200
@@ -324,13 +337,15 @@ async def test_success_on_first_attempt():
 async def test_network_error_retry():
     """Test retry on network errors."""
     mock_client = MagicMock()
-    
-    mock_client.request = AsyncMock(side_effect=[
-        httpx.NetworkError("Network unreachable"),
-        MagicMock(status_code=200, headers={}, content=b'{"ok": true}')
-    ])
 
-    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+    mock_client.request = AsyncMock(
+        side_effect=[
+            httpx.NetworkError("Network unreachable"),
+            MagicMock(status_code=200, headers={}, content=b'{"ok": true}'),
+        ]
+    )
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         response = await _upstream_request_with_retry(
             http_client=mock_client,
             method="POST",
@@ -340,7 +355,7 @@ async def test_network_error_retry():
             content=None,
             max_retries=3,
             backoff_base=0.1,
-            max_wait=1.0
+            max_wait=1.0,
         )
 
     assert response.status_code == 200
@@ -351,12 +366,12 @@ async def test_network_error_retry():
 async def run_all_tests():
     """Run all retry tests."""
     print("\n🧪 Running Retry Logic Tests\n")
-    
+
     # Sync tests
     test_calculate_backoff_basic()
     test_calculate_backoff_max_wait()
     test_calculate_backoff_jitter()
-    
+
     # Async tests
     await test_retry_on_timeout()
     await test_retry_on_connect_error()
@@ -368,7 +383,7 @@ async def run_all_tests():
     await test_max_retries_exhausted_server_error()
     await test_success_on_first_attempt()
     await test_network_error_retry()
-    
+
     print("\n✅ All retry tests passed!\n")
 
 
