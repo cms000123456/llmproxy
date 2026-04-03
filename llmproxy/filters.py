@@ -57,8 +57,11 @@ def filter_messages(messages: list[dict], cfg: Any) -> list[dict]:
         role = msg.get("role", "")
         content = msg.get("content")
 
-        # Remove empty messages
-        if cfg.remove_empty_messages and not content:
+        # Remove empty messages (but keep assistant messages with tool_calls and tool messages)
+        has_tool_calls = bool(msg.get("tool_calls"))
+        if cfg.remove_empty_messages and not content and role not in ("tool", "assistant"):
+            continue
+        if cfg.remove_empty_messages and not content and role == "assistant" and not has_tool_calls:
             continue
 
         # Deduplicate system messages (keep first)
@@ -74,6 +77,10 @@ def filter_messages(messages: list[dict], cfg: Any) -> list[dict]:
         # Truncate long messages
         content = truncate_message(content, cfg.max_message_length)
 
-        out.append({"role": role, "content": content})
+        # Preserve extra fields for assistant (tool_calls) and tool (tool_call_id/name)
+        new_msg = dict(msg)
+        new_msg["role"] = role
+        new_msg["content"] = content
+        out.append(new_msg)
 
     return out
