@@ -46,6 +46,8 @@ SYSTEM_PROMPT = """You are a helpful coding assistant with direct access to the 
 You can read files, write files, run shell commands, list directories, and search code.
 
 Guidelines:
+- **EXPLAIN YOUR REASONING**: Before taking action, briefly explain what you plan to do and why.
+- **SUMMARIZE CHANGES**: When writing code, don't dump large blocks. Instead, explain what changed and why, showing only the key parts.
 - Prefer reading files before editing them.
 - When writing code, produce complete, working files.
 - Keep shell commands safe and relevant.
@@ -54,6 +56,12 @@ Guidelines:
 - When creating reports or documentation, use the current date (ask if unsure).
 - Do not invent or hallucinate file contents - always read files first.
 - Be concise in your responses and tool usage.
+
+When making code changes:
+1. First explain the approach and what files you'll modify
+2. Describe the key changes (not line-by-line)
+3. Show a brief diff-style summary of the most important changes
+4. Confirm the file was written successfully
 """
 
 UNDERSTANDING_PROMPT = """You are a helpful coding assistant. The user wants you to perform a task.
@@ -69,11 +77,12 @@ Analyze their request and respond with a specific, actionable plan:
 
 **Approach:**
 - Describe your planned approach (2-3 bullet points max)
+- Explain your reasoning for this approach
 
 **Clarifications needed:** (only if unclear)
 - Ask specific questions if the request is ambiguous
 
-Be concrete and specific. Don't use generic phrases like "I'll help you with that" or "I understand you want me to do something." Actually describe what you will do.
+Be concrete and specific. Don't use generic phrases like "I'll help you with that" or "I understand you want me to do something." Actually describe what you will do and why.
 """
 
 # Store conversations outside the repo to avoid git contamination
@@ -297,6 +306,98 @@ class Agent:
         summary = " | ".join(parts) if parts else "No savings yet"
         return f"[dim green]Proxy saved: {summary} (~${saved_cost:.2f})[/dim green]"
     
+    def _print_tool_call(self, name: str, args: dict):
+        """Pretty-print a tool call with context about what it's doing."""
+        if name == "read_file":
+            path = args.get("path", "unknown")
+            offset = args.get("offset", 1)
+            limit = args.get("limit", 100)
+            console.print(f"[dim blue]📖 Reading[/dim blue] [dim]{path} (lines {offset}-{offset + limit - 1})...[/dim]")
+        
+        elif name == "write_file":
+            path = args.get("path", "unknown")
+            mode = args.get("mode", "overwrite")
+            content = args.get("content", "")
+            lines = content.count("\n") + 1 if content else 0
+            action = "Creating" if mode == "overwrite" else "Appending to"
+            console.print(f"[dim yellow]✏️  {action}[/dim yellow] [dim]{path} ({lines} lines)...[/dim]")
+        
+        elif name == "shell":
+            command = args.get("command", "")
+            timeout = args.get("timeout", 30)
+            # Truncate long commands
+            cmd_display = command[:60] + "..." if len(command) > 60 else command
+            console.print(f"[dim magenta]⚡ Running[/dim magenta] [dim]{cmd_display} (timeout: {timeout}s)[/dim]")
+        
+        elif name == "list_directory":
+            path = args.get("path", ".")
+            console.print(f"[dim green]📁 Listing directory[/dim green] [dim]{path}/...[/dim]")
+        
+        elif name == "grep":
+            pattern = args.get("pattern", "")
+            path = args.get("path", ".")
+            glob = args.get("glob")
+            glob_str = f" ({glob})" if glob else ""
+            console.print(f"[dim cyan]🔍 Searching[/dim cyan] [dim]'{pattern}' in {path}{glob_str}...[/dim]")
+        
+        else:
+            # Generic fallback
+            console.print(f"[dim]→ Tool call: {name}({json.dumps(args)})[/dim]")
+
+    def _print_tool_result(self, name: str, result: str):
+        """Print a brief summary of the tool result."""
+        # Truncate result for display
+        max_display_len = 200
+        
+        if name == "read_file":
+            # Show file size info from the header line
+            first_line = result.split("\n")[0] if result else ""
+            if "lines" in first_line:
+                console.print(f"[dim green]   ✓ {first_line}[/dim green]")
+            else:
+                display = result[:max_display_len] + "..." if len(result) > max_display_len else result
+                console.print(f"[dim]{display}[/dim]")
+        
+        elif name == "write_file":
+            # Usually just "Success: wrote to ..."
+            console.print(f"[dim green]   ✓ {result}[/dim green]")
+        
+        elif name == "shell":
+            # Show exit code and brief output
+            lines = result.split("\n")
+            exit_code_line = [l for l in lines if l.startswith("Exit code:")]
+            if exit_code_line:
+                exit_code = exit_code_line[0].split(":")[1].strip()
+                status = "✓" if exit_code == "0" else "✗"
+                color = "green" if exit_code == "0" else "red"
+                console.print(f"[dim {color}]   {status} Exit code: {exit_code}[/dim {color}]")
+            
+            # Show first line of output if any
+            stdout_lines = [l for l in lines if l.startswith("STDOUT:")]
+            if stdout_lines and len(stdout_lines[0]) > 8:
+                output = stdout_lines[0][7:].strip()[:80]
+                if output:
+                    console.print(f"[dim]   → {output}...[/dim]")
+        
+        elif name == "list_directory":
+            # Count entries
+            lines = result.split("\n")
+            entries = len([l for l in lines if l.strip().startswith("[")])
+            console.print(f"[dim green]   ✓ Found {entries} items[/dim green]")
+        
+        elif name == "grep":
+            # Count matches
+            matches = len([l for l in result.split("\n") if l.strip()])
+            if result.startswith("No matches"):
+                console.print(f"[dim yellow]   ⚠ No matches found[/dim yellow]")
+            else:
+                console.print(f"[dim green]   ✓ {min(matches, 100)} matches found[/dim green]")
+        
+        else:
+            # Generic fallback
+            display = result[:max_display_len] + "..." if len(result) > max_display_len else result
+            console.print(f"[dim]   → {display}[/dim]")
+
     def get_understanding(self, user_input: str) -> str:
         """Get a brief summary of understanding before executing."""
         # Create a temporary message list for the understanding prompt
@@ -339,7 +440,7 @@ class Agent:
         # Save after adding user message
         self._save()
 
-        for _ in range(self.max_tool_rounds):
+        for round_num in range(self.max_tool_rounds):
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.messages,
@@ -363,12 +464,27 @@ class Agent:
             if not tool_calls or choice.finish_reason != "tool_calls":
                 return assistant_msg.content or "(no response)"
 
+            # Show which round we're on (if multiple tools will be used)
+            if round_num > 0 or tool_calls:
+                console.print(f"[dim]— Step {round_num + 1} —[/dim]")
+            
+            # Print assistant's reasoning if provided
+            if assistant_msg.content:
+                console.print(f"[dim cyan]🤔 {assistant_msg.content}[/dim cyan]")
+
             # Execute tools and append results
             for tc in tool_calls:
                 name = tc.function.name
                 args = json.loads(tc.function.arguments)
-                console.print(f"[dim]→ Tool call: {name}({json.dumps(args)})[/dim]")
+                
+                # Pretty-print tool call with context
+                self._print_tool_call(name, args)
+                
                 result = asyncio.run(execute_tool(name, args))
+                
+                # Print brief result summary
+                self._print_tool_result(name, result)
+                
                 # Some providers (e.g. kimi-for-coding) omit tool_call_id; generate a fallback
                 tool_call_id = tc.id or f"call_{hash(json.dumps(args, sort_keys=True))}"
                 self.messages.append({

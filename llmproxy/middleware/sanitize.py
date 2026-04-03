@@ -119,18 +119,26 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
             # Create new response
             sanitized_body = json.dumps(sanitized_data).encode('utf-8')
             
+            # Remove Content-Length header as body size changed
+            new_headers = dict(response.headers)
+            new_headers.pop('content-length', None)
+            
             return Response(
                 content=sanitized_body,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=new_headers,
                 media_type=response.media_type
             )
         except (json.JSONDecodeError, Exception):
             # If we can't parse/sanitize, return original
+            # Remove Content-Length header as we're re-creating the response
+            new_headers = dict(response.headers)
+            new_headers.pop('content-length', None)
+            
             return Response(
                 content=body,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=new_headers,
                 media_type=response.media_type
             )
     
