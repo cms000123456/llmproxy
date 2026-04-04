@@ -1,45 +1,80 @@
+# Docker Compose for Production
+# Optimized for production deployment with health checks and resource limits
+
 services:
   llmproxy:
-    build: .
+    build:
+      context: .
+      target: production
+      dockerfile: Dockerfile
     container_name: llmproxy
     ports:
       - "8080:8080"
     environment:
       - LLM_PROXY_UPSTREAM_BASE_URL=${LLM_PROXY_UPSTREAM_BASE_URL:-https://api.moonshot.cn/v1}
       - LLM_PROXY_UPSTREAM_API_KEY=${LLM_PROXY_UPSTREAM_API_KEY:-}
-      - LLM_PROXY_ENABLE_FILTERING=true
-      - LLM_PROXY_ENABLE_COMPRESSION=true
-      - LLM_PROXY_MAX_TOTAL_TOKENS=120000
-      - LLM_PROXY_ENABLE_CACHE=true
+      - LLM_PROXY_ENABLE_FILTERING=${LLM_PROXY_ENABLE_FILTERING:-true}
+      - LLM_PROXY_ENABLE_COMPRESSION=${LLM_PROXY_ENABLE_COMPRESSION:-true}
+      - LLM_PROXY_MAX_TOTAL_TOKENS=${LLM_PROXY_MAX_TOTAL_TOKENS:-120000}
+      - LLM_PROXY_ENABLE_CACHE=${LLM_PROXY_ENABLE_CACHE:-true}
+      - LLM_PROXY_CACHE_BACKEND=${LLM_PROXY_CACHE_BACKEND:-memory}
+      - LLM_PROXY_LOG_LEVEL=${LLM_PROXY_LOG_LEVEL:-INFO}
+      - LLM_PROXY_AUTH_ENABLED=${LLM_PROXY_AUTH_ENABLED:-false}
       - LLM_PROXY_OLLAMA_BASE_URL=http://ollama:11434
-      - LLM_PROXY_OLLAMA_MODEL=llama3.2
-      - LLM_PROXY_OLLAMA_ENABLE_COMPRESSION=true
-      - LLM_PROXY_OLLAMA_ENABLE_RELEVANCE_FILTER=false
+      - LLM_PROXY_OLLAMA_MODEL=${LLM_PROXY_OLLAMA_MODEL:-llama3.2}
+      - LLM_PROXY_OLLAMA_ENABLE_COMPRESSION=${LLM_PROXY_OLLAMA_ENABLE_COMPRESSION:-true}
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
     networks:
       - llmproxy-net
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - proxy-data:/app/data
 
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     volumes:
       - ollama:/root/.ollama
-    # Expose only inside the Docker network by default.
-    # Uncomment the next line if you want to hit Ollama directly from the host.
-    # ports:
-    #   - "11434:11434"
     networks:
       - llmproxy-net
     restart: unless-stopped
     deploy:
       resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
         reservations:
           devices:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   llmproxy-net:
@@ -47,3 +82,6 @@ networks:
 
 volumes:
   ollama:
+    driver: local
+  proxy-data:
+    driver: local

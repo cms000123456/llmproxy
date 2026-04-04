@@ -27,8 +27,10 @@ Complete documentation index for the LLM Proxy project.
 ### Deployment
 - **[HOWTO.md#docker-deployment](HOWTO.md#docker-deployment)** - Docker deployment guide
 - **[HOWTO.md#development-stack](HOWTO.md#development-stack)** - Full development environment
+- **[DOCKER.md](DOCKER.md)** - Docker optimization and best practices
 - **[docker-compose.yml](docker-compose.yml)** - Production compose file
 - **[docker-compose.dev.yml](docker-compose.dev.yml)** - Development compose file
+- **[docker-compose.monitoring.yml](docker-compose.monitoring.yml)** - Observability stack
 
 ### Security
 - **[README.md#security-features](README.md#security-features)** - Security overview
