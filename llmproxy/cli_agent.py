@@ -21,44 +21,68 @@ console = Console()
 DEFAULT_AGENT_MD = """# Project Agent Configuration
 
 This file contains project-specific instructions for the coding agent.
-Run `/init` in the agent to create this file with defaults.
+Edit this file to customize how the agent works with your project.
 
 ## Project Context
 
-<!-- Describe your project here - what it does, its architecture, etc. -->
+<!--
+Describe what this project does, its purpose, and high-level architecture.
+Example: "A web API for managing user data with FastAPI and PostgreSQL"
+-->
 
-This project uses the LLM Proxy framework.
+[Your project description here]
 
 ## Technology Stack
 
-<!-- List the main technologies, frameworks, versions -->
+<!--
+List the main technologies, frameworks, and versions the project uses.
+This helps the agent use correct syntax and patterns.
+-->
 
-- **Language**: Python 3.9+
-- **Framework**: FastAPI
-- **Key Dependencies**: pydantic, httpx
+- **Language**: [e.g., Python 3.11, TypeScript 5.0, etc.]
+- **Framework**: [e.g., FastAPI, React, Django, etc.]
+- **Database**: [e.g., PostgreSQL, MongoDB, etc.]
+- **Key Dependencies**: [e.g., pydantic, sqlalchemy, etc.]
 
 ## Code Style Guidelines
 
-<!-- Project-specific coding conventions -->
+<!--
+Project-specific coding conventions not covered by general guidelines.
+-->
 
-- Use type hints everywhere
-- Follow Google docstring style
-- Keep functions under 50 lines when possible
+- [e.g., Use dependency injection for database sessions]
+- [e.g., All API routes must have response models]
+- [e.g., Prefer async/await for I/O operations]
 
 ## Common Tasks
 
-<!-- Typical workflows for this project -->
+<!--
+Typical workflows or patterns for this project.
+The agent will follow these when appropriate.
+-->
 
-1. Read existing code before modifying
-2. Write tests for new features
-3. Run linting before committing
+1. [e.g., Run migrations before committing schema changes]
+2. [e.g., Update tests when modifying API endpoints]
+3. [e.g., Check AGENT.md for project context]
+
+## Important Files/Directories
+
+<!--
+Key files or directories the agent should know about.
+-->
+
+- `src/` - Main source code
+- `tests/` - Test files
+- `docs/` - Documentation
+- `[other important paths]`
 
 ## Project-Specific Notes
 
-<!-- Any other context the agent should know -->
+<!--
+Any other context that would help the agent work effectively with this codebase.
+-->
 
-- Check AGENT.md for project-specific context
-- Use `/init` to reset this file to defaults
+- [Any specific conventions, gotchas, or preferences]
 """
 
 

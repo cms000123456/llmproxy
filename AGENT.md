@@ -1,17 +1,23 @@
 # Project Agent Configuration
 
 This file contains project-specific instructions for the coding agent.
-Run `/init` in the agent to create this file with defaults.
+Edit this file to customize how the agent works with your project.
 
 ## Project Context
 
-<!-- Describe your project here - what it does, its architecture, etc. -->
+<!-- 
+Describe what this project does, its purpose, and high-level architecture.
+Example: "A web API for managing user data with FastAPI and PostgreSQL"
+-->
 
 This is an LLM Proxy that provides filtering, compression, caching, and routing capabilities for LLM API calls.
 
 ## Technology Stack
 
-<!-- List the main technologies, frameworks, versions -->
+<!-- 
+List the main technologies, frameworks, and versions the project uses.
+This helps the agent use correct syntax and patterns.
+-->
 
 - **Language**: Python 3.9+
 - **Framework**: FastAPI
@@ -21,7 +27,9 @@ This is an LLM Proxy that provides filtering, compression, caching, and routing 
 
 ## Code Style Guidelines
 
-<!-- Project-specific coding conventions -->
+<!-- 
+Project-specific coding conventions not covered by general guidelines.
+-->
 
 - Use type hints everywhere
 - Follow Google docstring style
@@ -29,34 +37,37 @@ This is an LLM Proxy that provides filtering, compression, caching, and routing 
 - Use `from __future__ import annotations` in all files
 - Prefer `pathlib.Path` over `os.path`
 
-## Architecture Decisions
-
-<!-- Important architectural patterns or constraints -->
-
-- All I/O is async using `aiofiles` and `httpx.AsyncClient`
-- Configuration uses Pydantic Settings with env var support
-- Storage backends are pluggable (memory, redis)
-- Middleware pattern for request/response processing
-
 ## Common Tasks
 
-<!-- Typical workflows for this project -->
+<!-- 
+Typical workflows or patterns for this project.
+The agent will follow these when appropriate.
+-->
 
-### Adding a new endpoint
-1. Add route handler in `llmproxy/server.py`
-2. Add tests in `tests/test_*.py`
-3. Update documentation
+1. Read existing code before modifying
+2. Write tests for new features  
+3. Run linting before committing
+4. Update AGENT.md with project-specific context
 
-### Adding a new filter
-1. Add filter function in `llmproxy/filters.py`
-2. Add test in `tests/test_filters.py`
-3. Register in filter pipeline
+## Important Files/Directories
+
+<!-- 
+Key files or directories the agent should know about.
+-->
+
+- `llmproxy/` - Main source code
+- `tests/` - Test files
+- `docs/` - Documentation
+- `AGENT.md` - This file (project context for agent)
 
 ## Project-Specific Notes
 
-<!-- Any other context the agent should know -->
+<!-- 
+Any other context that would help the agent work effectively with this codebase.
+-->
 
 - The proxy sits between clients and upstream LLM APIs
 - Supports A/B testing between different upstream providers
 - Has built-in cost tracking and metrics
 - Uses structured logging with structlog
+- Middleware pattern for request/response processing
