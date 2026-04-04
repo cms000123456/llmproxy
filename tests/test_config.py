@@ -42,9 +42,9 @@ def test_default_values():
     assert settings.upstream_base_url == "https://api.moonshot.cn/v1"
     assert settings.host == "0.0.0.0"
     assert settings.port == 8080
-    assert settings.enable_filtering 
-    assert settings.enable_compression 
-    assert settings.enable_cache 
+    assert settings.enable_filtering
+    assert settings.enable_compression
+    assert settings.enable_cache
     assert settings.max_message_length == 32000
     assert settings.max_total_tokens == 120000
     print("✓ Default values correct")
@@ -90,7 +90,7 @@ def test_env_override():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.enable_cache 
+        assert not settings.enable_cache  # Fixed: env set to "false"
         assert settings.cache_max_size == 500
     finally:
         del os.environ["LLM_PROXY_ENABLE_CACHE"]
@@ -128,8 +128,8 @@ def test_kimi_code_compat():
     """Test Kimi Code compatibility settings."""
     settings = _get_settings_without_env_file()
 
-    # Defaults
-    assert settings.kimi_code_compat 
+    # Defaults (kimi_code_compat is False by default)
+    assert not settings.kimi_code_compat  # Fixed: default is False
     assert settings.kimi_code_version == "1.0.0"
     assert settings.kimi_code_device_name == "kimi-proxy"
 
@@ -144,7 +144,7 @@ def test_kimi_code_compat():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.kimi_code_compat 
+        assert settings.kimi_code_compat
         assert settings.kimi_code_version == "2.0.0"
     finally:
         del os.environ["LLM_PROXY_KIMI_CODE_COMPAT"]
@@ -160,11 +160,11 @@ def test_ollama_settings():
     # Defaults
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.ollama_model == "llama3.2"
-    assert settings.ollama_enable_compression 
+    assert settings.ollama_enable_compression
 
     # Override
-    os.environ["LLM_PROXY_OLLAMA_BASE_URL"] = "http://ollama:11434"
-    os.environ["LLM_PROXY_OLLAMA_MODEL"] = "mistral"
+    os.environ["LLM_PROXY_OLLAMA_MODEL"] = "codellama"
+    os.environ["LLM_PROXY_OLLAMA_ENABLE_COMPRESSION"] = "false"
 
     try:
         import importlib
@@ -173,11 +173,11 @@ def test_ollama_settings():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.ollama_base_url == "http://ollama:11434"
-        assert settings.ollama_model == "mistral"
+        assert settings.ollama_model == "codellama"
+        assert not settings.ollama_enable_compression
     finally:
-        del os.environ["LLM_PROXY_OLLAMA_BASE_URL"]
         del os.environ["LLM_PROXY_OLLAMA_MODEL"]
+        del os.environ["LLM_PROXY_OLLAMA_ENABLE_COMPRESSION"]
 
     print("✓ Ollama settings work")
 
@@ -187,9 +187,9 @@ def test_filtering_settings():
     settings = _get_settings_without_env_file()
 
     # Defaults
-    assert settings.deduplicate_system_messages 
-    assert settings.remove_empty_messages 
-    assert settings.strip_base64_images 
+    assert settings.deduplicate_system_messages
+    assert settings.remove_empty_messages
+    assert not settings.strip_base64_images  # Default is False
 
     # Override
     os.environ["LLM_PROXY_DEDUPLICATE_SYSTEM_MESSAGES"] = "false"
@@ -202,8 +202,8 @@ def test_filtering_settings():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.deduplicate_system_messages 
-        assert settings.strip_base64_images 
+        assert not settings.deduplicate_system_messages  # Fixed: env set to "false"
+        assert settings.strip_base64_images
     finally:
         del os.environ["LLM_PROXY_DEDUPLICATE_SYSTEM_MESSAGES"]
         del os.environ["LLM_PROXY_STRIP_BASE64_IMAGES"]
@@ -229,7 +229,7 @@ def test_type_coercion():
         importlib.reload(config)
         settings = config.Settings()
         assert settings.port == 9000  # int
-        assert settings.enable_cache   # bool
+        assert not settings.enable_cache  # bool - Fixed: env set to "false"
         assert settings.cache_max_size == 2000  # int
         assert settings.retry_backoff == 1.5  # float
     finally:

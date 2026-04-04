@@ -95,10 +95,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 
     def _validate_api_key(self, api_key: str) -> bool:
         """Validate API key using constant-time comparison to prevent timing attacks."""
-        return any(
-            secrets.compare_digest(api_key, valid_key)
-            for valid_key in self.api_keys
-        )
+        return any(secrets.compare_digest(api_key, valid_key) for valid_key in self.api_keys)
 
 
 def generate_api_key(prefix: str = "llmproxy") -> str:

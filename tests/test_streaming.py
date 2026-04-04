@@ -44,7 +44,7 @@ class TestStreamingDetection:
         """Test that stream=true is correctly detected."""
 
         # This is tested via integration tests with the full server
-        # The logic is: is_streaming = is_chat_completion and payload.get("stream") 
+        # The logic is: is_streaming = is_chat_completion and payload.get("stream")
         assert True  # Placeholder - actual test in test_integration.py
 
 

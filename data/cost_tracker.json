@@ -6,8 +6,8 @@
       "tokens_upstream": 1000,
       "tokens_downstream": 500,
       "estimated_cost": 0.025,
-      "first_seen": 1775248085.4180717,
-      "last_used": 1775248085.4180732
+      "first_seen": 1775291165.7037473,
+      "last_used": 1775291165.703749
     }
   },
   "budgets": {
@@ -17,5 +17,5 @@
     "upstream": 0.01,
     "downstream": 0.03
   },
-  "saved_at": 1775248085.418077
+  "saved_at": 1775291165.703753
 }

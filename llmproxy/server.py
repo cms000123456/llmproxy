@@ -212,7 +212,7 @@ async def _upstream_request_with_retry(
                 if retry_after:
                     try:
                         wait_time = float(retry_after)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
                 else:
                     wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
@@ -671,12 +671,12 @@ async def proxy(request: Request, path: str):
     # Check budget before processing
     if client_api_key and settings.enable_cost_tracking and not check_budget(client_api_key):
         return JSONResponse(
-                status_code=429,
-                content={
-                    "error": "Budget exceeded",
-                    "message": "This API key has exceeded its budget. Contact administrator.",
-                },
-            )
+            status_code=429,
+            content={
+                "error": "Budget exceeded",
+                "message": "This API key has exceeded its budget. Contact administrator.",
+            },
+        )
     elif settings.upstream_api_key:
         # No auth header, use upstream key
         headers["authorization"] = f"Bearer {settings.upstream_api_key}"
@@ -691,12 +691,12 @@ async def proxy(request: Request, path: str):
     # Check budget before processing
     if client_api_key and settings.enable_cost_tracking and not check_budget(client_api_key):
         return JSONResponse(
-                status_code=429,
-                content={
-                    "error": "Budget exceeded",
-                    "message": "This API key has exceeded its budget. Contact administrator.",
-                },
-            )
+            status_code=429,
+            content={
+                "error": "Budget exceeded",
+                "message": "This API key has exceeded its budget. Contact administrator.",
+            },
+        )
 
     # Kimi Code compatibility: inject agent headers and strip client fingerprints
     if settings.kimi_code_compat:
