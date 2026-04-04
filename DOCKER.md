@@ -89,7 +89,7 @@ DOCKER_BUILDKIT=1 docker build --progress=plain -t llmproxy:latest .
 |-------|------|--------|-------------|
 | `llmproxy:latest` | ~150MB | 8 | Production |
 | `llmproxy:dev` | ~600MB | 10 | Development |
-| `python:3.12-slim` | ~60MB | 1 | Base image |
+| `python:3.14-slim` | ~60MB | 1 | Base image |
 
 ## 🏃 Running Containers
 
