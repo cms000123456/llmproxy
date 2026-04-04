@@ -222,6 +222,23 @@ You can also benchmark live against a running proxy instance:
 python benchmark.py http://localhost:8080
 ```
 
+### Load Testing
+
+Test the proxy under various load conditions:
+
+```bash
+# Basic load test (30s, 10 concurrent)
+python load_test.py http://localhost:8080
+
+# Extended test with cache validation
+python load_test.py http://localhost:8080 --duration 60 --test-cache
+
+# Stress test with ramp-up
+python load_test.py http://localhost:8080 --stress-test
+```
+
+See [LOAD_TESTING.md](LOAD_TESTING.md) for detailed documentation.
+
 ## Monitoring
 
 The proxy includes a built-in Prometheus metrics endpoint and an optional Grafana dashboard for real-time monitoring.

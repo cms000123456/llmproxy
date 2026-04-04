@@ -14,6 +14,8 @@ A practical guide for using the LLM Proxy and Coding Agent CLI.
 - [Environment Setup](#environment-setup)
 - [Docker Deployment](#docker-deployment)
 - [Monitoring & Observability](#monitoring--observability)
+- [Distributed Tracing](#distributed-tracing)
+- [Load Testing](#load-testing)
 - [Development Stack](#development-stack)
 - [Troubleshooting](#troubleshooting)
 - [Tips & Best Practices](#tips--best-practices)
