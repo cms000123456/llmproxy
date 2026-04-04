@@ -2,7 +2,7 @@
 # Multi-stage build for optimized production image
 
 # Stage 1: Builder
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 
@@ -19,7 +19,7 @@ COPY requirements.txt pyproject.toml ./
 RUN uv pip install --system --no-cache -r requirements.txt
 
 # Stage 2: Production
-FROM python:3.13-slim AS production
+FROM python:3.14-slim AS production
 
 WORKDIR /app
 
