@@ -150,7 +150,9 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
             return obj
 
         if isinstance(obj, dict):
-            result: dict[str, Any] = {key: self._sanitize_object(value) for key, value in obj.items()}
+            result: dict[str, Any] = {
+                key: self._sanitize_object(value) for key, value in obj.items()
+            }
             return result
         elif isinstance(obj, list):
             return [self._sanitize_object(item) for item in obj]

@@ -9,6 +9,7 @@ from typing import Any
 tiktoken: ModuleType | None = None
 try:
     import tiktoken as _tiktoken_module
+
     tiktoken = _tiktoken_module
 except Exception:  # pragma: no cover
     pass

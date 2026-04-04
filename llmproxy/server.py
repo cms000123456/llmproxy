@@ -365,10 +365,10 @@ _ab_test_metrics: dict[str, dict[str, int]] = {
 
 def _get_ab_test_variant(api_key: str | None) -> str:
     """Determine which variant to use for A/B testing.
-    
+
     Args:
         api_key: The client's API key (used for sticky sessions)
-        
+
     Returns:
         "control" or "experimental"
     """
@@ -387,6 +387,7 @@ def _get_ab_test_variant(api_key: str | None) -> str:
 
     # Assign variant based on traffic split
     import random
+
     variant = "experimental" if random.random() < settings.ab_test_traffic_split else "control"
 
     # Store for sticky sessions
@@ -511,6 +512,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Final metrics: {summary}")
     logger.info("Shutdown complete")
 
+
 app = FastAPI(title="LLM Proxy", version="0.1.0", lifespan=lifespan)
 
 # Add middleware (order matters - first added runs first, last runs closest to handler)
@@ -558,8 +560,7 @@ async def ab_test_status_endpoint():
         "configuration": {
             "control_upstream": settings.upstream_base_url,
             "experimental_upstream": (
-                settings.experimental_upstream_base_url
-                if _experimental_http_client else None
+                settings.experimental_upstream_base_url if _experimental_http_client else None
             ),
             "traffic_split": settings.ab_test_traffic_split,
             "sticky_sessions": settings.ab_test_sticky_sessions,

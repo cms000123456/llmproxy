@@ -98,7 +98,5 @@ class TestTraceOperation:
 
         tracer = get_tracer("test")
 
-        with trace_operation(
-            tracer, "cache_lookup", cache_hit=True, tokens=100
-        ) as span:
+        with trace_operation(tracer, "cache_lookup", cache_hit=True, tokens=100) as span:
             assert span is not None

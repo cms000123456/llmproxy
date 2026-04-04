@@ -22,8 +22,9 @@ jobs:
         with:
           python-version: '3.12'
       
-      - name: Install Ruff
-        run: pip install ruff
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
       
       - name: Check formatting
         run: ruff format --check llmproxy tests
@@ -72,22 +73,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       
-      - name: Run tests with coverage
+      - name: Run tests
         run: |
           python -m pytest tests/ \
             --ignore=tests/test_integration.py \
-            -v --tb=short \
-            --cov=llmproxy \
-            --cov-report=xml \
-            --cov-report=term-missing
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.12'
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-          verbose: true
+            -v --tb=short
 
   security:
     name: Security Scan
@@ -100,23 +90,11 @@ jobs:
         with:
           python-version: '3.12'
       
-      - name: Install security tools
+      - name: Install dependencies
         run: |
-          pip install bandit safety
+          pip install -e ".[dev]"
       
       - name: Run bandit security linter
         run: |
           bandit -r llmproxy -f json -o bandit-report.json || true
           bandit -r llmproxy -f txt -ll || true
-      
-      - name: Check dependencies for known vulnerabilities
-        run: safety check --full-report || true
-        continue-on-error: true
-      
-      - name: Upload bandit report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bandit-report
-          path: bandit-report.json
-          retention-days: 30

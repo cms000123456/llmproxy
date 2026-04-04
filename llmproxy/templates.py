@@ -252,7 +252,9 @@ class TemplateNotFoundError(Exception):
 _template_engine: Optional[TemplateEngine] = None
 
 
-def init_template_engine(custom_templates: Optional[Dict[str, Dict[str, Any]]] = None) -> TemplateEngine:
+def init_template_engine(
+    custom_templates: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> TemplateEngine:
     """Initialize the global template engine."""
     global _template_engine
     _template_engine = TemplateEngine(custom_templates)
