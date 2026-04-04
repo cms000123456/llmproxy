@@ -387,6 +387,23 @@ Client Request
 - Add custom authentication logic in `llmproxy/auth.py`.
 - Modify PII patterns in `llmproxy/middleware/sanitize.py`.
 
+### Development Setup
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Install pre-commit hooks
+pre-commit install
+
+# Run tests
+pytest
+
+# Run linting
+ruff check .
+mypy llmproxy
+```
+
 ## Production Deployment
 
 ### Docker with Authentication

@@ -912,6 +912,34 @@ Each proxy request is traced with spans for:
 
 ---
 
+## Development Tools
+
+### Pre-commit Hooks
+
+Set up pre-commit hooks to catch code quality issues before committing:
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install git hooks
+pre-commit install
+
+# Run on all files (initial setup)
+pre-commit run --all-files
+```
+
+Hooks run automatically on every commit to check:
+- **Code formatting** (ruff)
+- **Type checking** (mypy)
+- **Security scanning** (bandit, detect-secrets)
+- **General file checks** (trailing whitespace, YAML/JSON validation)
+- **Docker linting** (hadolint)
+
+See [PRE_COMMIT.md](PRE_COMMIT.md) for detailed documentation.
+
+---
+
 ## Troubleshooting
 
 ### Authentication Issues

@@ -47,6 +47,7 @@ Complete documentation index for the LLM Proxy project.
 - **[LOAD_TESTING.md](LOAD_TESTING.md)** - Load testing guide
 - **[HOWTO.md#load-testing](HOWTO.md#load-testing)** - Load testing quick start
 - **[README.md#benchmarking-savings](README.md#benchmarking-savings)** - Token savings benchmark
+- **[PRE_COMMIT.md](PRE_COMMIT.md)** - Code quality hooks
 
 ### CI/CD
 - **[README.md#cicd](README.md#cicd)** - CI/CD overview and badges
@@ -59,6 +60,7 @@ Complete documentation index for the LLM Proxy project.
 ### Development
 - **[TODO.md](TODO.md)** - Development roadmap and tasks
 - **[HOWTO.md#development-stack](HOWTO.md#development-stack)** - Development environment
+- **[PRE_COMMIT.md](PRE_COMMIT.md)** - Pre-commit hooks setup and usage
 - **[HOWTO.md#troubleshooting](HOWTO.md#troubleshooting)** - Common issues and solutions
 
 ## 🏗️ Architecture Overview
