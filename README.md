@@ -424,13 +424,41 @@ MIT License - see LICENSE file for details.
 ## CI/CD
 
 [![CI](https://github.com/cms000123456/llmproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/cms000123456/llmproxy/actions/workflows/ci.yml)
+[![Docker](https://github.com/cms000123456/llmproxy/actions/workflows/docker.yml/badge.svg)](https://github.com/cms000123456/llmproxy/actions/workflows/docker.yml)
 
 ### Automated Checks
 
-| Check | Status | Description |
-|-------|--------|-------------|
-| Lint | ✅ | Ruff code linting |
-| Type Check | 🟡 | mypy type checking (gradual) |
-| Test | ✅ | pytest on Python 3.9-3.12 |
-| Security | ✅ | Bandit security audit |
+| Workflow | Status | Description |
+|----------|--------|-------------|
+| CI | [![CI](https://github.com/cms000123456/llmproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/cms000123456/llmproxy/actions/workflows/ci.yml) | Lint, type check, test on Python 3.9-3.12 |
+| Docker | [![Docker](https://github.com/cms000123456/llmproxy/actions/workflows/docker.yml/badge.svg)](https://github.com/cms000123456/llmproxy/actions/workflows/docker.yml) | Build and push Docker images |
+| Security | - | Bandit, Safety, Trivy scanning |
+
+### Continuous Integration
+
+Every PR and push to main runs:
+- **Lint**: Ruff formatting and linting
+- **Type Check**: mypy type checking
+- **Test**: pytest on Python 3.9, 3.10, 3.11, 3.12
+- **Security**: Bandit, Safety, and Trivy scans
+- **Docker**: Multi-platform build (amd64, arm64)
+
+### Docker Images
+
+Images are automatically built and pushed to GitHub Container Registry:
+
+```bash
+# Pull latest
+docker pull ghcr.io/cms000123456/llmproxy:latest
+
+# Pull specific version
+docker pull ghcr.io/cms000123456/llmproxy:v1.0.0
+```
+
+### Releases
+
+Automated releases on git tag push:
+- GitHub Release with changelog
+- Docker image tagged with version
+- PyPI package published (stable releases)
 

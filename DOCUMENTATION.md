@@ -48,6 +48,14 @@ Complete documentation index for the LLM Proxy project.
 - **[HOWTO.md#load-testing](HOWTO.md#load-testing)** - Load testing quick start
 - **[README.md#benchmarking-savings](README.md#benchmarking-savings)** - Token savings benchmark
 
+### CI/CD
+- **[README.md#cicd](README.md#cicd)** - CI/CD overview and badges
+- **`.github/workflows/`** - GitHub Actions workflows
+  - `ci.yml` - Lint, type check, test
+  - `docker.yml` - Docker build and push
+  - `release.yml` - Automated releases
+- **`.github/dependabot.yml`** - Automated dependency updates
+
 ### Development
 - **[TODO.md](TODO.md)** - Development roadmap and tasks
 - **[HOWTO.md#development-stack](HOWTO.md#development-stack)** - Development environment

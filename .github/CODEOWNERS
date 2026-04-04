@@ -1,0 +1,8 @@
+# Global code owners
+* @cms000123456
+
+# Documentation
+*.md @cms000123456
+
+# CI/CD workflows
+.github/workflows/ @cms000123456
