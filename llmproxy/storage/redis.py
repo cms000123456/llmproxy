@@ -3,7 +3,7 @@ from __future__ import annotations
 """Redis storage backend for distributed caching."""
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 try:
     import redis
@@ -42,7 +42,7 @@ class RedisBackend(StorageBackend):
         super().__init__(ttl_seconds)
         self.url = url
         self.key_prefix = key_prefix
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
 
         if redis is None:
             raise ImportError(
@@ -68,7 +68,7 @@ class RedisBackend(StorageBackend):
         """Add prefix to key."""
         return f"{self.key_prefix}{key}"
 
-    def get(self, key: str) -> Optional[dict]:
+    def get(self, key: str) -> dict | None:
         """Retrieve a value from Redis.
 
         Args:

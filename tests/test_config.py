@@ -42,9 +42,9 @@ def test_default_values():
     assert settings.upstream_base_url == "https://api.moonshot.cn/v1"
     assert settings.host == "0.0.0.0"
     assert settings.port == 8080
-    assert settings.enable_filtering == True
-    assert settings.enable_compression == True
-    assert settings.enable_cache == True
+    assert settings.enable_filtering 
+    assert settings.enable_compression 
+    assert settings.enable_cache 
     assert settings.max_message_length == 32000
     assert settings.max_total_tokens == 120000
     print("✓ Default values correct")
@@ -90,7 +90,7 @@ def test_env_override():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.enable_cache == False
+        assert settings.enable_cache 
         assert settings.cache_max_size == 500
     finally:
         del os.environ["LLM_PROXY_ENABLE_CACHE"]
@@ -129,7 +129,7 @@ def test_kimi_code_compat():
     settings = _get_settings_without_env_file()
 
     # Defaults
-    assert settings.kimi_code_compat == False
+    assert settings.kimi_code_compat 
     assert settings.kimi_code_version == "1.0.0"
     assert settings.kimi_code_device_name == "kimi-proxy"
 
@@ -144,7 +144,7 @@ def test_kimi_code_compat():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.kimi_code_compat == True
+        assert settings.kimi_code_compat 
         assert settings.kimi_code_version == "2.0.0"
     finally:
         del os.environ["LLM_PROXY_KIMI_CODE_COMPAT"]
@@ -160,7 +160,7 @@ def test_ollama_settings():
     # Defaults
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.ollama_model == "llama3.2"
-    assert settings.ollama_enable_compression == True
+    assert settings.ollama_enable_compression 
 
     # Override
     os.environ["LLM_PROXY_OLLAMA_BASE_URL"] = "http://ollama:11434"
@@ -187,9 +187,9 @@ def test_filtering_settings():
     settings = _get_settings_without_env_file()
 
     # Defaults
-    assert settings.deduplicate_system_messages == True
-    assert settings.remove_empty_messages == True
-    assert settings.strip_base64_images == False
+    assert settings.deduplicate_system_messages 
+    assert settings.remove_empty_messages 
+    assert settings.strip_base64_images 
 
     # Override
     os.environ["LLM_PROXY_DEDUPLICATE_SYSTEM_MESSAGES"] = "false"
@@ -202,8 +202,8 @@ def test_filtering_settings():
 
         importlib.reload(config)
         settings = config.Settings()
-        assert settings.deduplicate_system_messages == False
-        assert settings.strip_base64_images == True
+        assert settings.deduplicate_system_messages 
+        assert settings.strip_base64_images 
     finally:
         del os.environ["LLM_PROXY_DEDUPLICATE_SYSTEM_MESSAGES"]
         del os.environ["LLM_PROXY_STRIP_BASE64_IMAGES"]
@@ -229,7 +229,7 @@ def test_type_coercion():
         importlib.reload(config)
         settings = config.Settings()
         assert settings.port == 9000  # int
-        assert settings.enable_cache == False  # bool
+        assert settings.enable_cache   # bool
         assert settings.cache_max_size == 2000  # int
         assert settings.retry_backoff == 1.5  # float
     finally:

@@ -7,7 +7,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import Optional
 
 from .logging_config import get_logger
 
@@ -57,7 +56,7 @@ class CostTracker:
         self,
         upstream_price: float = None,
         downstream_price: float = None,
-        storage_path: Optional[str] = None,
+        storage_path: str | None = None,
         auto_save: bool = True,
     ):
         self.upstream_price = upstream_price or self.DEFAULT_UPSTREAM_PRICE
@@ -85,7 +84,7 @@ class CostTracker:
         api_key: str,
         upstream_tokens: int,
         downstream_tokens: int,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Record token usage for an API key.
 
         Args:
@@ -123,7 +122,7 @@ class CostTracker:
 
             return alert
 
-    def _check_budget(self, key_id: str) -> Optional[str]:
+    def _check_budget(self, key_id: str) -> str | None:
         """Check if API key has exceeded its budget.
 
         Returns:
@@ -166,12 +165,12 @@ class CostTracker:
                 self._budgets.pop(key_id, None)
                 self._alerts.pop(key_id, None)
 
-    def get_budget(self, api_key: str) -> Optional[float]:
+    def get_budget(self, api_key: str) -> float | None:
         """Get the budget for an API key."""
         key_id = self._get_key_id(api_key)
         return self._budgets.get(key_id)
 
-    def get_stats(self, api_key: Optional[str] = None) -> dict:
+    def get_stats(self, api_key: str | None = None) -> dict:
         """Get statistics for an API key or all keys.
 
         Args:
@@ -207,7 +206,7 @@ class CostTracker:
                 "budgets_set": len(self._budgets),
             }
 
-    def reset_stats(self, api_key: Optional[str] = None) -> None:
+    def reset_stats(self, api_key: str | None = None) -> None:
         """Reset statistics for an API key or all keys.
 
         Args:
@@ -297,7 +296,7 @@ def record_api_key_usage(
     api_key: str,
     upstream_tokens: int,
     downstream_tokens: int,
-) -> Optional[str]:
+) -> str | None:
     """Convenience function to record usage in global tracker.
 
     Returns:

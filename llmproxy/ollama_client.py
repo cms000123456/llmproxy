@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Lightweight async client for a local Ollama instance."""
 
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -14,7 +14,7 @@ class OllamaClient:
         self,
         base_url: str = DEFAULT_OLLAMA_URL,
         timeout: float = 60.0,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -31,9 +31,9 @@ class OllamaClient:
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         stream: bool = False,
-        options: Optional[dict] = None,
+        options: dict | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "model": model,
@@ -59,7 +59,7 @@ class OllamaClient:
         model: str,
         messages: list[dict],
         stream: bool = False,
-        options: Optional[dict] = None,
+        options: dict | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "model": model,

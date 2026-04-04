@@ -5,7 +5,6 @@ from __future__ import annotations
 import fnmatch
 import os
 import subprocess
-from typing import Optional
 
 import aiofiles
 from rich.console import Console
@@ -110,7 +109,7 @@ def list_directory(path: str = ".") -> str:
         return f"Error listing {path}: {exc}"
 
 
-async def grep(pattern: str, path: str = ".", glob: Optional[str] = None) -> str:
+async def grep(pattern: str, path: str = ".", glob: str | None = None) -> str:
     """Search for a text pattern in files under a path asynchronously."""
     try:
         target = _sanitize_path(path)

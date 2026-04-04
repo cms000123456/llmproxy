@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .logging_config import get_logger
 
@@ -17,16 +17,16 @@ class Template:
 
     name: str
     description: str
-    system_prompt: Optional[str]
+    system_prompt: str | None
     user_prompt: str
-    variables: List[str]
+    variables: list[str]
 
 
 class TemplateEngine:
     """Engine for managing and rendering prompt templates."""
 
     # Default built-in templates
-    DEFAULT_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    DEFAULT_TEMPLATES: dict[str, dict[str, Any]] = {
         "code_review": {
             "description": "Review code for bugs, style, and improvements",
             "system_prompt": "You are a code reviewer. Be thorough but constructive.",
@@ -102,9 +102,9 @@ What could be causing this and how can I fix it?""",
         },
     }
 
-    def __init__(self, custom_templates: Optional[Dict[str, Dict[str, Any]]] = None):
+    def __init__(self, custom_templates: dict[str, dict[str, Any]] | None = None):
         """Initialize template engine with optional custom templates."""
-        self._templates: Dict[str, Template] = {}
+        self._templates: dict[str, Template] = {}
 
         # Load default templates
         for name, config in self.DEFAULT_TEMPLATES.items():
@@ -118,7 +118,7 @@ What could be causing this and how can I fix it?""",
 
         logger.info(f"Template engine initialized with {len(self._templates)} templates")
 
-    def _create_template(self, name: str, config: Dict[str, Any]) -> Template:
+    def _create_template(self, name: str, config: dict[str, Any]) -> Template:
         """Create a Template object from configuration."""
         user_prompt = config.get("user_prompt", "")
         variables = self._extract_variables(user_prompt)
@@ -144,7 +144,7 @@ What could be causing this and how can I fix it?""",
             variables=unique_vars,
         )
 
-    def _extract_variables(self, template: str) -> List[str]:
+    def _extract_variables(self, template: str) -> list[str]:
         """Extract variable names from a template string.
 
         Supports Jinja2-style syntax: {{ variable }}, {{ variable | default('value') }}
@@ -152,7 +152,7 @@ What could be causing this and how can I fix it?""",
         pattern = r"\{\{\s*(\w+)(?:\s*\|\s*[^}]+)?\s*\}\}"
         return re.findall(pattern, template)
 
-    def _render_template(self, template: str, variables: Dict[str, Any]) -> str:
+    def _render_template(self, template: str, variables: dict[str, Any]) -> str:
         """Render a template string with variable substitution.
 
         Supports:
@@ -174,7 +174,7 @@ What could be causing this and how can I fix it?""",
 
         return result
 
-    def render(self, template_name: str, variables: Dict[str, Any]) -> Dict[str, Any]:
+    def render(self, template_name: str, variables: dict[str, Any]) -> dict[str, Any]:
         """Render a template to a chat completion request format.
 
         Returns:
@@ -201,18 +201,18 @@ What could be causing this and how can I fix it?""",
 
         return {"messages": messages}
 
-    def list_templates(self) -> Dict[str, Dict[str, Any]]:
+    def list_templates(self) -> dict[str, dict[str, Any]]:
         """List all available templates with their metadata."""
         return {
             name: {"description": t.description, "variables": t.variables}
             for name, t in self._templates.items()
         }
 
-    def get_template(self, name: str) -> Optional[Template]:
+    def get_template(self, name: str) -> Template | None:
         """Get a specific template by name."""
         return self._templates.get(name)
 
-    def validate_variables(self, template_name: str, variables: Dict[str, Any]) -> List[str]:
+    def validate_variables(self, template_name: str, variables: dict[str, Any]) -> list[str]:
         """Validate that all required variables are provided.
 
         Returns list of missing required variables (those without defaults).
@@ -249,11 +249,11 @@ class TemplateNotFoundError(Exception):
 
 
 # Global template engine instance
-_template_engine: Optional[TemplateEngine] = None
+_template_engine: TemplateEngine | None = None
 
 
 def init_template_engine(
-    custom_templates: Optional[Dict[str, Dict[str, Any]]] = None,
+    custom_templates: dict[str, dict[str, Any]] | None = None,
 ) -> TemplateEngine:
     """Initialize the global template engine."""
     global _template_engine

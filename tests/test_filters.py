@@ -16,7 +16,7 @@ def test_is_base64_string_valid():
     """Test detection of valid base64 strings."""
     # Valid base64 (longer than 100 chars)
     long_valid = base64.b64encode(b"x" * 200).decode()
-    assert is_base64_string(long_valid) == True
+    assert is_base64_string(long_valid) 
     print("✓ Valid base64 detection works")
 
 
@@ -24,14 +24,14 @@ def test_is_base64_string_invalid():
     """Test rejection of non-base64 strings."""
     # Too short (less than 100 chars)
     short = base64.b64encode(b"hello").decode()
-    assert is_base64_string(short) == False
+    assert is_base64_string(short) 
 
     # Regular text
     assert (
         is_base64_string(
             "hello world this is just regular text that is long enough to meet the minimum length requirement"
         )
-        == False
+        
     )
 
     # Invalid characters
@@ -39,7 +39,7 @@ def test_is_base64_string_invalid():
         is_base64_string(
             '!!!@@@###$$$%%%^^^&&&***((()))___+++===[[[{{{{}}}]]]|||\\\\\\:;;;"""<<<>??>>,,,..///'
         )
-        == False
+        
     )
     print("✓ Invalid base64 rejection works")
 

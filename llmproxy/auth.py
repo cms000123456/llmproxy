@@ -3,7 +3,7 @@ from __future__ import annotations
 """API Key authentication middleware for LLM Proxy."""
 
 import secrets
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -74,7 +74,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 
         return await call_next(request)
 
-    def _extract_api_key(self, request: Request) -> Optional[str]:
+    def _extract_api_key(self, request: Request) -> str | None:
         """Extract API key from request headers.
 
         Checks in order:
@@ -95,10 +95,10 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
 
     def _validate_api_key(self, api_key: str) -> bool:
         """Validate API key using constant-time comparison to prevent timing attacks."""
-        for valid_key in self.api_keys:
-            if secrets.compare_digest(api_key, valid_key):
-                return True
-        return False
+        return any(
+            secrets.compare_digest(api_key, valid_key)
+            for valid_key in self.api_keys
+        )
 
 
 def generate_api_key(prefix: str = "llmproxy") -> str:
@@ -155,6 +155,6 @@ class APIKeyManager:
         return hasattr(request.state, "api_key")
 
     @staticmethod
-    def get_client_id(request: Request) -> Optional[str]:
+    def get_client_id(request: Request) -> str | None:
         """Get the authenticated client ID (API key prefix) for the request."""
         return getattr(request.state, "api_key", None)  # type: ignore[return-value]

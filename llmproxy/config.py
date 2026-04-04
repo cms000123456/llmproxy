@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Configuration for LLM Proxy."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic_settings import BaseSettings
 
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     port: int = 8080
 
     # Authentication
-    api_keys: List[str] = []  # List of valid API keys for client authentication
+    api_keys: list[str] = []  # List of valid API keys for client authentication
     auth_enabled: bool = True  # Enable/disable API key authentication
 
     # Filtering
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     cost_storage_path: str = "data/cost_tracker.json"
 
     # Prompt templates configuration
-    prompt_templates: Dict[str, Dict[str, Any]] = {}  # Custom templates to register
+    prompt_templates: dict[str, dict[str, Any]] = {}  # Custom templates to register
 
     # Distributed tracing configuration
     tracing_enabled: bool = False  # Enable OpenTelemetry tracing

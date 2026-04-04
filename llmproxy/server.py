@@ -722,7 +722,7 @@ async def proxy(request: Request, path: str):
     )
 
     # Check if this is a streaming request
-    is_streaming = is_chat_completion and payload.get("stream") == True
+    is_streaming = is_chat_completion and payload.get("stream") 
 
     original_token_count = 0
     transformed_payload = dict(payload)

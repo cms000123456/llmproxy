@@ -3,7 +3,6 @@ from __future__ import annotations
 """Abstract base class for storage backends."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class StorageBackend(ABC):
@@ -16,7 +15,7 @@ class StorageBackend(ABC):
         self.ttl_seconds = ttl_seconds
 
     @abstractmethod
-    def get(self, key: str) -> Optional[dict]:
+    def get(self, key: str) -> dict | None:
         """Retrieve a value from storage.
 
         Args:

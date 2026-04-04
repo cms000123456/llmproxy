@@ -7,7 +7,6 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from openai import OpenAI
@@ -153,7 +152,7 @@ class Agent:
         api_key: str = "",
         model: str = "kimi-for-coding",
         max_tool_rounds: int = 10,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         resume: bool = False,
     ):
         self.client = OpenAI(base_url=base_url, api_key=api_key)
