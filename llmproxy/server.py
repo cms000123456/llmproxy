@@ -212,7 +212,7 @@ async def _upstream_request_with_retry(
                 if retry_after:
                     try:
                         wait_time = float(retry_after)
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):
                         wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
                 else:
                     wait_time = _calculate_backoff(attempt, backoff_base, max_wait)

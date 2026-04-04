@@ -131,7 +131,7 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
                 headers=new_headers,
                 media_type=response.media_type,
             )
-        except json.JSONDecodeError, Exception:
+        except (json.JSONDecodeError, Exception):
             # If we can't parse/sanitize, return original
             # Remove Content-Length header as we're re-creating the response
             new_headers = dict(response.headers)
