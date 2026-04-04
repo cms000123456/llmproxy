@@ -17,6 +17,74 @@ from .tools import TOOL_DEFINITIONS, execute_tool
 
 console = Console()
 
+# Default AGENT.md content for /init command
+DEFAULT_AGENT_MD = """# Project Agent Configuration
+
+This file contains project-specific instructions for the coding agent.
+Run `/init` in the agent to create this file with defaults.
+
+## Project Context
+
+<!-- Describe your project here - what it does, its architecture, etc. -->
+
+This project uses the LLM Proxy framework.
+
+## Technology Stack
+
+<!-- List the main technologies, frameworks, versions -->
+
+- **Language**: Python 3.9+
+- **Framework**: FastAPI
+- **Key Dependencies**: pydantic, httpx
+
+## Code Style Guidelines
+
+<!-- Project-specific coding conventions -->
+
+- Use type hints everywhere
+- Follow Google docstring style
+- Keep functions under 50 lines when possible
+
+## Common Tasks
+
+<!-- Typical workflows for this project -->
+
+1. Read existing code before modifying
+2. Write tests for new features
+3. Run linting before committing
+
+## Project-Specific Notes
+
+<!-- Any other context the agent should know -->
+
+- Check AGENT.md for project-specific context
+- Use `/init` to reset this file to defaults
+"""
+
+
+def _load_agent_md() -> str:
+    """Load AGENT.md from current directory if it exists."""
+    agent_md_path = Path("AGENT.md")
+    if agent_md_path.exists():
+        try:
+            content = agent_md_path.read_text(encoding="utf-8")
+            return f"\n\n# PROJECT-SPECIFIC CONTEXT (from AGENT.md)\n\n{content}"
+        except Exception:
+            return ""
+    return ""
+
+
+def _init_agent_md() -> bool:
+    """Create default AGENT.md if it doesn't exist. Returns True if created."""
+    agent_md_path = Path("AGENT.md")
+    if agent_md_path.exists():
+        return False
+    try:
+        agent_md_path.write_text(DEFAULT_AGENT_MD, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
 
 def _fetch_proxy_savings(base_url: str) -> dict:
     """Fetch token savings from proxy metrics endpoint."""
@@ -40,7 +108,7 @@ def _fetch_proxy_savings(base_url: str) -> dict:
     return {}
 
 
-SYSTEM_PROMPT = """You are a helpful coding assistant with direct access to the user's local filesystem.
+SYSTEM_PROMPT_BASE = """You are a helpful coding assistant with direct access to the user's local filesystem.
 You can read files, write files, run shell commands, list directories, and search code.
 
 CURRENT VERSIONS (as of 2026-04-04):
@@ -69,6 +137,9 @@ When making code changes:
 3. Show a brief diff-style summary of the most important changes
 4. Confirm the file was written successfully
 """
+
+# Build full system prompt with AGENT.md if it exists
+SYSTEM_PROMPT = SYSTEM_PROMPT_BASE + _load_agent_md()
 
 UNDERSTANDING_PROMPT = """You are a helpful coding assistant. The user wants you to perform a task.
 
