@@ -296,6 +296,8 @@ cd ~/projects/my-awesome-project
 You: 
 ```
 
+![Interactive Agent](screenshots/interactive_agent.png)
+
 ### Example Commands
 
 ```

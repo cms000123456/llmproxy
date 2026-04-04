@@ -296,6 +296,8 @@ rate(llmproxy_errors_total[5m]) / rate(llmproxy_requests_total[5m])
 
 ### Grafana Dashboard
 
+![Grafana Dashboard](screenshots/grafana_dashboard.png)
+
 The pre-built dashboard includes:
 - **Request Statistics** - Total requests, request rate
 - **Cache Performance** - Hit rate, hits vs misses
