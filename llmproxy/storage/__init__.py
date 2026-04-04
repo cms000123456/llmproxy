@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Storage backends for LLM Proxy cache."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import StorageBackend
 from .memory import MemoryBackend
@@ -10,12 +10,18 @@ from .memory import MemoryBackend
 __all__ = ["StorageBackend", "MemoryBackend"]
 
 # Optional: Redis backend
-try:
-    from .redis import RedisBackend
+_redis_available = False
 
-    __all__.append("RedisBackend")
-except ImportError:
-    pass
+if TYPE_CHECKING:
+    from .redis import RedisBackend  # noqa: F401
+else:
+    try:
+        from .redis import RedisBackend  # noqa: F401
+
+        __all__.append("RedisBackend")
+        _redis_available = True
+    except ImportError:
+        pass
 
 
 def create_backend(backend_type: str, **kwargs: Any) -> StorageBackend:
@@ -39,17 +45,17 @@ def create_backend(backend_type: str, **kwargs: Any) -> StorageBackend:
             max_size=kwargs.get("max_size", 1000), ttl_seconds=kwargs.get("ttl_seconds", 300)
         )
     elif backend_type == "redis":
-        try:
-            from .redis import RedisBackend
-
-            return RedisBackend(
-                url=kwargs.get("redis_url", "redis://localhost:6379"),
-                ttl_seconds=kwargs.get("ttl_seconds", 300),
-                key_prefix=kwargs.get("redis_key_prefix", "llmproxy:"),
-            )
-        except ImportError:
+        if not _redis_available:
             raise ImportError(
                 "Redis backend requires 'redis' package. Install with: pip install redis"
-            )
+            ) from None
+
+        from .redis import RedisBackend  # noqa: F401
+
+        return RedisBackend(
+            url=kwargs.get("redis_url", "redis://localhost:6379"),
+            ttl_seconds=kwargs.get("ttl_seconds", 300),
+            key_prefix=kwargs.get("redis_key_prefix", "llmproxy:"),
+        )
     else:
         raise ValueError(f"Unknown backend type: {backend_type}. Supported: memory, redis")

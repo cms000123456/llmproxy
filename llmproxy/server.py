@@ -3,6 +3,7 @@ from __future__ import annotations
 """FastAPI server that proxies requests to an upstream LLM API with filtering, compression, and caching."""
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import random
@@ -223,15 +224,14 @@ async def _upstream_request_with_retry(
                     await asyncio.sleep(wait_time)
                     continue
 
-            if 500 <= response.status_code < 600:
+            if 500 <= response.status_code < 600 and attempt < max_retries:
                 # Server error - retry
-                if attempt < max_retries:
-                    wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
-                    logger.warning(
-                        f"Upstream server error {response.status_code}, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})"
-                    )
-                    await asyncio.sleep(wait_time)
-                    continue
+                wait_time = _calculate_backoff(attempt, backoff_base, max_wait)
+                logger.warning(
+                    f"Upstream server error {response.status_code}, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(wait_time)
+                continue
 
             # Success or non-retryable error
             return response
@@ -657,10 +657,9 @@ async def proxy(request: Request, path: str):
 
     if auth_header.startswith("Bearer "):
         provided_key = auth_header[7:].strip()
-        if provided_key in api_keys_set:
+        if provided_key in api_keys_set and settings.upstream_api_key:
             # This is our auth key, replace with upstream key
-            if settings.upstream_api_key:
-                headers["authorization"] = f"Bearer {settings.upstream_api_key}"
+            headers["authorization"] = f"Bearer {settings.upstream_api_key}"
         # else: forward client's key to upstream
     # Extract client API key for cost tracking
     client_api_key = None
@@ -670,9 +669,8 @@ async def proxy(request: Request, path: str):
             client_api_key = provided
 
     # Check budget before processing
-    if client_api_key and settings.enable_cost_tracking:
-        if not check_budget(client_api_key):
-            return JSONResponse(
+    if client_api_key and settings.enable_cost_tracking and not check_budget(client_api_key):
+        return JSONResponse(
                 status_code=429,
                 content={
                     "error": "Budget exceeded",
@@ -691,9 +689,8 @@ async def proxy(request: Request, path: str):
             client_api_key = provided
 
     # Check budget before processing
-    if client_api_key and settings.enable_cost_tracking:
-        if not check_budget(client_api_key):
-            return JSONResponse(
+    if client_api_key and settings.enable_cost_tracking and not check_budget(client_api_key):
+        return JSONResponse(
                 status_code=429,
                 content={
                     "error": "Budget exceeded",
@@ -711,10 +708,8 @@ async def proxy(request: Request, path: str):
     body_bytes = await request.body()
     payload = {}
     if body_bytes:
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             payload = json.loads(body_bytes)
-        except json.JSONDecodeError:
-            pass
 
     # Only intercept chat completions for filtering/compression/cache
     is_chat_completion = path in ("chat/completions", "v1/chat/completions") or path.endswith(
@@ -722,7 +717,7 @@ async def proxy(request: Request, path: str):
     )
 
     # Check if this is a streaming request
-    is_streaming = is_chat_completion and payload.get("stream") 
+    is_streaming = is_chat_completion and payload.get("stream")
 
     original_token_count = 0
     transformed_payload = dict(payload)
