@@ -2,7 +2,7 @@
 # Multi-stage build for optimized production image
 
 # Stage 1: Builder
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 WORKDIR /build
 
@@ -19,7 +19,7 @@ COPY requirements.txt pyproject.toml ./
 RUN uv pip install --system --no-cache -r requirements.txt
 
 # Stage 2: Production
-FROM python:3.12-slim AS production
+FROM python:3.13-slim AS production
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
