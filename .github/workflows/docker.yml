@@ -55,7 +55,7 @@ jobs:
             type=sha,prefix=,suffix=,format=short
       
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: production
@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Build image for scanning
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: production
