@@ -16,6 +16,16 @@ A lightweight, OpenAI-compatible proxy that sits between your application and a 
 - **Coding Agent CLI**: A Kimi-Code/Claude-Code style terminal agent with filesystem tools (read, write, shell, grep, ls).
 - **Dockerized**: One-command deployment with Docker Compose, including an optional Ollama sidecar.
 
+## Documentation
+
+📚 **[Complete Documentation Index](DOCUMENTATION.md)** - Navigate all docs from one place
+
+Quick links:
+- **[HOWTO.md](HOWTO.md)** - Detailed setup, configuration, and usage guides
+- **[LOAD_TESTING.md](LOAD_TESTING.md)** - Performance testing and benchmarking
+- **[monitoring/README.md](monitoring/README.md)** - Observability with Prometheus/Grafana/Jaeger
+- **[TODO.md](TODO.md)** - Development roadmap and planned features
+
 ## Quick Start (Local)
 
 ```bash
