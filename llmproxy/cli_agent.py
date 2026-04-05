@@ -241,6 +241,8 @@ PRICING = {
     "qwen2.5-coder:7b": {"input": 0.0, "output": 0.0, "local": True},
     "qwen2.5-coder:32b": {"input": 0.0, "output": 0.0, "local": True},
     "llama3.3:latest": {"input": 0.0, "output": 0.0, "local": True},
+    "llama3.2": {"input": 0.0, "output": 0.0, "local": True},
+    "llama3.2:latest": {"input": 0.0, "output": 0.0, "local": True},
     "llama3.2:3b": {"input": 0.0, "output": 0.0, "local": True},
     "deepseek-coder:6.7b": {"input": 0.0, "output": 0.0, "local": True},
     "deepseek-coder:33b": {"input": 0.0, "output": 0.0, "local": True},
@@ -617,13 +619,20 @@ class Agent:
         """
         # Default to a small local model if available
         if model is None:
-            # Try to use a small local model
-            small_models = ["phi3:mini", "gemma4:4b", "qwen2.5-coder:7b"]
-            model = self.model  # fallback
+            # Try to use a small local model - prefer local over cloud
+            # Check what models are available via Ollama
+            small_models = ["llama3.2:latest", "phi3:mini", "gemma4:latest", "qwen2.5-coder:7b", "codellama:7b"]
+            model = None
             for m in small_models:
                 if m in PRICING and PRICING[m].get("local", False):
                     model = m
                     break
+            # If no local model found in pricing, try common local model names
+            if model is None:
+                model = "llama3.2:latest"  # Most common local model
+            # Log what we're using
+            if self.debug:
+                _debug_log("SUBAGENT MODEL", f"Using local model: {model}", force=self.debug)
         
         return Subagent(
             parent_agent=self,
