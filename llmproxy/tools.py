@@ -424,15 +424,11 @@ async def search_web(query: str, limit: int = 5) -> str:
         url = f"https://lite.duckduckgo.com/lite/?q={encoded_query}"
         
         async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-            # More realistic browser headers
+            # Simple headers - avoid compression which can cause issues
             headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate, br",
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
             }
             resp = await client.get(url, headers=headers)
             resp.raise_for_status()
