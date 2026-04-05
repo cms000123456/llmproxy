@@ -498,13 +498,21 @@ async def search_web(query: str, limit: int = 5) -> str:
             
             # Pattern for result links in DuckDuckGo lite
             # Format: <a class="result-link" href="URL">TITLE</a>
-            link_pattern = r'<a class="result-link" href="([^"]+)">([^<]+)</a>'
-            links = re.findall(link_pattern, html)
+            # Note: DDG uses single quotes in HTML and href may come before class
+            link_pattern = r"<a[^>]*class=['\"]result-link['\"][^>]*href=['\"]([^'\"]+)['\"][^>]*>([^<]+)</a>|<a[^>]*href=['\"]([^'\"]+)['\"][^>]*class=['\"]result-link['\"][^>]*>([^<]+)</a>"
+            matches = re.findall(link_pattern, html, re.IGNORECASE)
+            # Flatten the two alternative capture groups
+            links = []
+            for m in matches:
+                if m[0]:  # First pattern matched
+                    links.append((m[0], m[1]))
+                else:  # Second pattern matched
+                    links.append((m[2], m[3]))
             
             # Pattern for snippets - they're in the next row
             # Look for text in table cells after the link
-            snippet_pattern = r'<td[^>]*class="result-snippet"[^>]*>([^<]+)</td>'
-            snippets = re.findall(snippet_pattern, html)
+            snippet_pattern = r'<td[^>]*class=[\'\"]result-snippet[\'\"][^>]*>([^<]+)</td>'
+            snippets = re.findall(snippet_pattern, html, re.IGNORECASE)
             
             for i, (href, title) in enumerate(links[:limit]):
                 snippet = snippets[i].strip() if i < len(snippets) else ""
