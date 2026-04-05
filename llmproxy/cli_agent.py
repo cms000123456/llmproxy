@@ -360,7 +360,7 @@ class Agent:
         base_url: str = "http://localhost:8080/v1",
         api_key: str = "",
         model: str = "kimi-for-coding",
-        max_tool_rounds: int = 10,
+        max_tool_rounds: int = 50,
         session_id: str | None = None,
         resume: bool = False,
         debug: bool = False,

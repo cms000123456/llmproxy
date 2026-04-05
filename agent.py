@@ -613,7 +613,7 @@ def run(
         help="Ask for confirmation before executing tasks",
     ),
     max_tool_rounds: int = typer.Option(
-        int(_get_env("LLM_AGENT_MAX_TOOL_ROUNDS", "10")),
+        int(_get_env("LLM_AGENT_MAX_TOOL_ROUNDS", "50")),
         "--max-tool-rounds",
         "-t",
         help="Maximum number of tool call rounds per request (env: LLM_AGENT_MAX_TOOL_ROUNDS)",
