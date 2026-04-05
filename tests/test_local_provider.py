@@ -335,3 +335,116 @@ class TestCleanMessagesForOllama:
         assert len(cleaned) == 2
         assert cleaned[0] == {"role": "system", "content": "You are a helpful assistant."}
         print("✓ System messages preserved")
+
+
+class TestToolSupport:
+    """Tests for tool support via prompt engineering."""
+
+    def test_format_tools_as_text(self):
+        """Tools should be formatted as text instructions."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_datetime",
+                    "description": "Get current date and time",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "timezone": {"type": "string", "description": "Timezone"},
+                            "format": {"type": "string", "description": "Output format"},
+                        },
+                        "required": ["timezone"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "description": "Search the web",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
+        ]
+        
+        text = provider._format_tools_as_text(tools)
+        
+        assert "You have access to the following tools:" in text
+        assert "get_datetime" in text
+        assert "search_web" in text
+        assert "Get current date and time" in text
+        assert "timezone" in text
+        assert "(required)" in text
+        assert "TOOL:" in text
+        assert "ARGS:" in text
+        print("✓ Tools formatted as text")
+
+    def test_format_tools_empty(self):
+        """Empty tools should return empty string."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        text = provider._format_tools_as_text([])
+        
+        assert text == ""
+        print("✓ Empty tools returns empty string")
+
+    def test_parse_tool_response_no_tools(self):
+        """Response without tool markers should return content only."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        content = "Hello, how can I help you?"
+        
+        clean_content, tool_calls = provider._parse_tool_response(content)
+        
+        assert clean_content == content
+        assert tool_calls is None
+        print("✓ Plain response parsed correctly")
+
+    def test_parse_tool_response_with_tool(self):
+        """Response with tool markers should extract tool calls."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        content = "I'll search for that.\nTOOL: search_web\nARGS: {\"query\": \"latest news\"}"
+        
+        clean_content, tool_calls = provider._parse_tool_response(content)
+        
+        assert "I'll search for that" in clean_content
+        assert "TOOL:" not in clean_content
+        assert tool_calls is not None
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["function"]["name"] == "search_web"
+        assert "latest news" in tool_calls[0]["function"]["arguments"]
+        print("✓ Tool response parsed correctly")
+
+    def test_parse_tool_response_multiple_tools(self):
+        """Response with multiple tools should extract all."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        content = """I'll help you.
+TOOL: get_datetime
+ARGS: {"timezone": "UTC"}
+Then I'll search.
+TOOL: search_web
+ARGS: {"query": "hello"}"""
+        
+        clean_content, tool_calls = provider._parse_tool_response(content)
+        
+        assert tool_calls is not None
+        assert len(tool_calls) == 2
+        assert tool_calls[0]["function"]["name"] == "get_datetime"
+        assert tool_calls[1]["function"]["name"] == "search_web"
+        print("✓ Multiple tools parsed correctly")

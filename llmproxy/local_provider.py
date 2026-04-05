@@ -203,6 +203,98 @@ class LocalProvider:
         
         return cleaned
 
+    def _format_tools_as_text(self, tools: list[dict]) -> str:
+        """Format tools as text for Ollama models that don't support native function calling."""
+        if not tools:
+            return ""
+        
+        lines = ["\n\nYou have access to the following tools:"]
+        
+        for i, tool in enumerate(tools, 1):
+            func = tool.get("function", {})
+            name = func.get("name", "")
+            desc = func.get("description", "")
+            params = func.get("parameters", {})
+            
+            lines.append(f"\n{i}. {name}")
+            lines.append(f"   Description: {desc}")
+            
+            if params.get("properties"):
+                lines.append("   Parameters:")
+                for param_name, param_info in params["properties"].items():
+                    param_type = param_info.get("type", "any")
+                    param_desc = param_info.get("description", "")
+                    required = param_name in params.get("required", [])
+                    req_marker = " (required)" if required else ""
+                    lines.append(f"     - {param_name}: {param_type}{req_marker} - {param_desc}")
+        
+        lines.append("\nTo use a tool, respond with:")
+        lines.append("TOOL: <tool_name>")
+        lines.append("ARGS: <json arguments>")
+        lines.append("\nIf you don't need a tool, respond normally.")
+        
+        return "\n".join(lines)
+
+    def _parse_tool_response(self, content: str) -> tuple[str, list[dict] | None]:
+        """Parse response for tool calls.
+        
+        Returns (content, tool_calls) where tool_calls is None if no tools were called.
+        """
+        if "TOOL:" not in content:
+            return content, None
+        
+        # Extract tool calls
+        tool_calls = []
+        lines = content.split("\n")
+        i = 0
+        tool_call_id = 0
+        
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            if line.startswith("TOOL:"):
+                tool_name = line[5:].strip()
+                args_str = "{}"
+                
+                # Look for ARGS on next line
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith("ARGS:"):
+                    args_str = lines[i + 1].strip()[5:].strip()
+                    i += 1
+                
+                # Parse arguments
+                try:
+                    args = json.loads(args_str) if args_str else {}
+                except json.JSONDecodeError:
+                    args = {"raw": args_str}
+                
+                tool_calls.append({
+                    "id": f"call_{tool_call_id}",
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(args),
+                    }
+                })
+                tool_call_id += 1
+            
+            i += 1
+        
+        # Remove tool instructions from content
+        clean_lines = []
+        skip_next = False
+        for i, line in enumerate(lines):
+            if skip_next:
+                skip_next = False
+                continue
+            if line.strip().startswith("TOOL:"):
+                skip_next = True  # Skip ARGS line too
+                continue
+            clean_lines.append(line)
+        
+        clean_content = "\n".join(clean_lines).strip()
+        
+        return clean_content, tool_calls if tool_calls else None
+
     async def chat_completions(
         self,
         model: str,
@@ -218,6 +310,24 @@ class LocalProvider:
         
         # Clean messages for Ollama (strip tool-related fields)
         cleaned_messages = self._clean_messages_for_ollama(messages)
+        
+        # If tools are provided, inject them into the system prompt
+        if tools:
+            tool_instructions = self._format_tools_as_text(tools)
+            
+            # Find system message or add one
+            system_found = False
+            for msg in cleaned_messages:
+                if msg.get("role") == "system":
+                    msg["content"] = msg.get("content", "") + tool_instructions
+                    system_found = True
+                    break
+            
+            if not system_found:
+                cleaned_messages.insert(0, {
+                    "role": "system",
+                    "content": f"You are a helpful assistant. {tool_instructions}"
+                })
         
         # Build Ollama chat payload
         payload: dict[str, Any] = {
@@ -242,9 +352,9 @@ class LocalProvider:
 
         try:
             if stream:
-                return await self._stream_chat(payload, resolved_model)
+                return await self._stream_chat(payload, resolved_model, tools=tools)
             else:
-                return await self._chat(payload, resolved_model)
+                return await self._chat(payload, resolved_model, tools=tools)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise HTTPException(
@@ -258,7 +368,7 @@ class LocalProvider:
                 detail=f"Cannot connect to Ollama at {self.base_url}. Is it running?",
             )
 
-    async def _chat(self, payload: dict, model: str) -> dict:
+    async def _chat(self, payload: dict, model: str, tools: list[dict] | None = None) -> dict:
         """Non-streaming chat completion."""
         client = await self._get_client()
         resp = await client.post("/api/chat", json=payload)
@@ -266,7 +376,10 @@ class LocalProvider:
         data = resp.json()
 
         # Convert Ollama response to OpenAI format
-        content = data.get("message", {}).get("content", "")
+        raw_content = data.get("message", {}).get("content", "")
+        
+        # Parse for tool calls if tools were provided
+        content, tool_calls = self._parse_tool_response(raw_content) if tools else (raw_content, None)
         
         # Estimate tokens (Ollama doesn't always return this)
         prompt_tokens = data.get("prompt_eval_count", 0)
@@ -276,7 +389,14 @@ class LocalProvider:
         if prompt_tokens == 0:
             prompt_tokens = sum(len(m.get("content", "")) // 4 for m in payload["messages"])
         if completion_tokens == 0:
-            completion_tokens = len(content) // 4
+            completion_tokens = len(raw_content) // 4
+
+        message = {
+            "role": "assistant",
+            "content": content if content else None,
+        }
+        if tool_calls:
+            message["tool_calls"] = tool_calls
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
@@ -286,11 +406,8 @@ class LocalProvider:
             "choices": [
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": content,
-                    },
-                    "finish_reason": "stop" if not data.get("done_reason") else data["done_reason"],
+                    "message": message,
+                    "finish_reason": "tool_calls" if tool_calls else ("stop" if not data.get("done_reason") else data["done_reason"]),
                 }
             ],
             "usage": {
@@ -300,7 +417,7 @@ class LocalProvider:
             },
         }
 
-    async def _stream_chat(self, payload: dict, model: str) -> StreamingResponse:
+    async def _stream_chat(self, payload: dict, model: str, tools: list[dict] | None = None) -> StreamingResponse:
         """Streaming chat completion."""
         payload["stream"] = True
         client = await self._get_client()
@@ -310,6 +427,7 @@ class LocalProvider:
         async def event_generator() -> AsyncIterator[str]:
             completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
             created = int(time.time())
+            accumulated_content = ""
             
             async with client.stream(request) as response:
                 response.raise_for_status()
@@ -336,6 +454,7 @@ class LocalProvider:
                     content = message.get("content", "")
                     
                     if content:
+                        accumulated_content += content
                         chunk = {
                             "id": completion_id,
                             "object": "chat.completion.chunk",
@@ -352,13 +471,20 @@ class LocalProvider:
                         yield f"data: {json.dumps(chunk)}\n\n"
                     
                     if data.get("done"):
+                        # Check for tool calls in accumulated content
+                        finish_reason = "stop"
+                        if tools and "TOOL:" in accumulated_content:
+                            # For streaming, we can't easily send tool_calls in chunks
+                            # The client will need to parse the content
+                            finish_reason = "tool_calls"
+                        
                         # Final chunk
                         yield f"data: {json.dumps({
                             'id': completion_id,
                             'object': 'chat.completion.chunk',
                             'created': created,
                             'model': model,
-                            'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}],
+                            'choices': [{'index': 0, 'delta': {}, 'finish_reason': finish_reason}],
                         })}\n\n"
                         break
                 
