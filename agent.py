@@ -5,6 +5,7 @@ import atexit
 import os
 import sys
 import termios
+from pathlib import Path
 from typing import Optional
 
 import openai
@@ -18,6 +19,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.application import get_app
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.shortcuts import CompleteStyle
+from prompt_toolkit.history import FileHistory
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -745,6 +747,11 @@ def run(
     
     # Pre-fetch GPU info for status bar
     gpu_info = _fetch_gpu_info(base_url, api_key)
+    
+    # Setup command history
+    history_path = Path.home() / ".local" / "share" / "llmproxy" / "history"
+    history_path.mkdir(parents=True, exist_ok=True)
+    session_history = FileHistory(str(history_path / f"{agent.project_id}.txt"))
 
     try:
         while True:
@@ -758,6 +765,7 @@ def run(
                     complete_style=CompleteStyle.MULTI_COLUMN,
                     key_bindings=bindings,
                     enable_history_search=True,
+                    history=session_history,
                     style=COMPLETION_STYLE,
                     bottom_toolbar=lambda: _format_bottom_toolbar(agent, gpu_info, get_confirm_status()),
                     # Show completion menu on tab even when text is empty
