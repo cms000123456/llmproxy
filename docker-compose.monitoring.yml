@@ -15,7 +15,7 @@ services:
     image: prom/prometheus:v2.48.0
     container_name: llmproxy-prometheus
     ports:
-      - "9091:9090"
+      - "${PROMETHEUS_PORT_MAPPING:-9091:9090}"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -35,7 +35,7 @@ services:
     image: grafana/grafana:10.2.3
     container_name: llmproxy-grafana
     ports:
-      - "3002:3000"
+      - "${GRAFANA_PORT_MAPPING:-3002:3000}"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
@@ -55,8 +55,8 @@ services:
     image: jaegertracing/all-in-one:latest
     container_name: llmproxy-jaeger
     ports:
-      - "16686:16686"  # Jaeger UI
-      - "4318:4318"    # OTLP HTTP receiver (for traces)
+      - "${JAEGER_UI_PORT_MAPPING:-16686:16686}"  # Jaeger UI
+      - "${JAEGER_OTLP_PORT_MAPPING:-4318:4318}"    # OTLP HTTP receiver (for traces)
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     networks:

@@ -9,7 +9,7 @@ services:
       dockerfile: Dockerfile
     container_name: llmproxy
     ports:
-      - "8080:8080"
+      - "${LLM_PROXY_PORT_MAPPING:-8080:8080}"
     environment:
       - LLM_PROXY_UPSTREAM_BASE_URL=${LLM_PROXY_UPSTREAM_BASE_URL:-https://api.moonshot.cn/v1}
       - LLM_PROXY_UPSTREAM_API_KEY=${LLM_PROXY_UPSTREAM_API_KEY:-}
@@ -54,6 +54,8 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
+    ports:
+      - "${OLLAMA_PORT_MAPPING:-11434:11434}"
     volumes:
       - ollama:/root/.ollama
     networks:
@@ -80,7 +82,7 @@ services:
     image: searxng/searxng:latest
     container_name: searxng
     ports:
-      - "8081:8080"
+      - "${SEARXNG_PORT_MAPPING:-8081:8080}"
     environment:
       - SEARXNG_BASE_URL=http://localhost:8081/
       - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-ultrasecretkey}

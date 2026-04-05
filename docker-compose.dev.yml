@@ -7,7 +7,7 @@ services:
     build: .
     container_name: llmproxy-dev
     ports:
-      - "8080:8080"
+      - "${LLM_PROXY_PORT_MAPPING:-8080:8080}"
     environment:
       # Upstream API
       - LLM_PROXY_UPSTREAM_BASE_URL=${LLM_PROXY_UPSTREAM_BASE_URL:-https://api.moonshot.cn/v1}
@@ -56,7 +56,7 @@ services:
     volumes:
       - ollama-dev:/root/.ollama
     ports:
-      - "11434:11434"  # Expose for direct access during development
+      - "${OLLAMA_PORT_MAPPING:-11434:11434}"  # Expose for direct access during development
     networks:
       - llmproxy-dev-net
     restart: unless-stopped
@@ -73,7 +73,7 @@ services:
     image: redis:7-alpine
     container_name: redis-dev
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT_MAPPING:-6379:6379}"
     volumes:
       - redis-dev:/data
     networks:
@@ -86,7 +86,7 @@ services:
     image: jaegertracing/all-in-one:latest
     container_name: jaeger-dev
     ports:
-      - "16686:16686"  # Jaeger UI
+      - "${JAEGER_UI_PORT_MAPPING:-16686:16686}"  # Jaeger UI
       - "14268:14268"  # Jaeger collector HTTP
       - "14250:14250"  # Jaeger collector gRPC
       - "6831:6831/udp"  # Jaeger agent compact thrift
@@ -102,7 +102,7 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus-dev
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT_MAPPING:-9090:9090}"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-dev:/prometheus
@@ -121,7 +121,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana-dev
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT_MAPPING:-3000:3000}"
     volumes:
       - grafana-dev:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -140,7 +140,7 @@ services:
     image: nginx:alpine
     container_name: dashboard-dev
     ports:
-      - "3000:80"
+      - "${DASHBOARD_PORT_MAPPING:-3000:80}"
     volumes:
       - ./dashboard/public:/usr/share/nginx/html:ro
     networks:

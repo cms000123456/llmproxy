@@ -6,7 +6,7 @@ services:
     image: nginx:alpine
     container_name: llmproxy-dashboard
     ports:
-      - "3000:80"
+      - "${DASHBOARD_PORT_MAPPING:-3000:80}"
     volumes:
       - ./dashboard/public:/usr/share/nginx/html:ro
     networks:
