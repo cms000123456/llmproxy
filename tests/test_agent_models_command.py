@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from agent import _fetch_models, _display_models
+from agent import _fetch_models, _display_models_enhanced, _format_model_info
 
 
 class TestFetchModels:
@@ -67,7 +67,7 @@ class TestDisplayModels:
         console = Console(force_terminal=True)
         
         with patch("agent.console", console):
-            _display_models([], "current-model")
+            _display_models_enhanced([], "current-model", None)
         
         # Should not raise an error
         
@@ -84,7 +84,28 @@ class TestDisplayModels:
         
         with patch("agent.console", console):
             # Should not raise an error
-            _display_models(models, "current-model")
+            _display_models_enhanced(models, "current-model", None)
+
+
+class TestFormatModelInfo:
+    """Test model info formatting."""
+
+    def test_format_model_info_with_size(self):
+        """Format model info extracts size."""
+        info = _format_model_info("qwen2.5-coder:14b", None)
+        assert "14B parameters" in info
+        assert "VRAM Required" in info
+
+    def test_format_model_info_with_gpu(self):
+        """Format model info with GPU compatibility."""
+        gpu_info = {"free_vram_gb": 20.0}
+        info = _format_model_info("qwen2.5-coder:14b", gpu_info)
+        assert "Fits your GPU" in info or "May not fit" in info
+
+    def test_format_model_info_unknown_size(self):
+        """Format model info without recognized size."""
+        info = _format_model_info("custom-model", None)
+        assert "VRAM Required" in info
 
 
 class TestModelAliases:
