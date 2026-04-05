@@ -998,6 +998,14 @@ class Agent:
             "architecture", "design", "complex", "multiple files",
             "change", "modify", "update", "fix bug", "debug",
             "create", "add feature", "new feature", "rewrite",
+            # Game-related (requires understanding game loop, state management)
+            "scrolling", "scroll", "game ", "helicopter", "player",
+            "collision", "physics", "animation", "sprite",
+            "segmentation fault", "crash", "segfault", "core dumped",
+            "memory leak", "null pointer",
+            # Code changes that require understanding context
+            "function", "class", "method", "variable", "state",
+            "loop", "condition", "event", "handler", "callback",
         ]
         if any(x in task_lower for x in complex_keywords):
             return False, ""
