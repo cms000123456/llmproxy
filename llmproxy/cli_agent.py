@@ -253,9 +253,15 @@ def _list_sessions(project_id: str) -> list[dict]:
     return sessions
 
 
-def _debug_log(title: str, data: Any) -> None:
-    """Log debug information if DEBUG is enabled."""
-    if not DEBUG:
+def _debug_log(title: str, data: Any, force: bool = False) -> None:
+    """Log debug information if DEBUG is enabled.
+    
+    Args:
+        title: Title for the debug section
+        data: Data to log (list, dict, or other)
+        force: If True, log even if DEBUG is disabled (for Agent's self.debug)
+    """
+    if not DEBUG and not force:
         return
     
     # Print to stderr to avoid interfering with normal output
@@ -740,7 +746,7 @@ class Agent:
         self._save()
         
         # Debug: log messages being sent
-        _debug_log(f"SENDING TO LLM ({self.model})", self.messages)
+        _debug_log(f"SENDING TO LLM ({self.model})", self.messages, force=self.debug)
 
         for round_num in range(self.max_tool_rounds):
             response = self.client.chat.completions.create(
@@ -751,7 +757,7 @@ class Agent:
             )
             
             # Debug: log raw response
-            if self.debug:
+            if self.debug or DEBUG:
                 resp_dict = {
                     "id": response.id,
                     "model": response.model,
@@ -779,7 +785,7 @@ class Agent:
                         for c in response.choices
                     ]
                 }
-                _debug_log("LLM RESPONSE", resp_dict)
+                _debug_log("LLM RESPONSE", resp_dict, force=self.debug)
 
             # Track token usage
             self._update_usage(response)
