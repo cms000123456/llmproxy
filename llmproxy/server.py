@@ -30,6 +30,7 @@ from .logging_config import configure_logging, get_logger
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
 from .middleware.sanitize import SanitizationMiddleware
+from .model_manager import ModelManager, auto_setup_models
 from .storage import create_backend
 from .tracing import get_tracer, setup_tracing
 
@@ -457,6 +458,39 @@ async def lifespan(app: FastAPI):
                     f"Default model '{settings.local_model}' not found. "
                     f"Run: ollama pull {settings.local_model}"
                 )
+                
+                # Auto-download if enabled
+                if settings.auto_download_models:
+                    logger.info("Auto-download enabled - downloading recommended models...")
+                    try:
+                        from .gpu_detector import detect_gpus
+                        gpu_info = detect_gpus()
+                        
+                        manager = ModelManager(
+                            ollama_base_url=settings.ollama_base_url,
+                            auto_download=True,
+                            auto_download_best=settings.auto_download_best_only,
+                        )
+                        
+                        results = await manager.ensure_recommended_models(gpu_info=gpu_info)
+                        
+                        for result in results:
+                            if result.status == "complete":
+                                logger.info(f"✓ Downloaded {result.model_name}")
+                            else:
+                                logger.error(f"✗ Failed to download {result.model_name}: {result.error_message}")
+                        
+                        await manager.aclose()
+                        
+                        # Refresh model list
+                        models = await local_provider.list_models()
+                        model_names = [m["id"] for m in models]
+                        logger.info(f"Updated available models: {model_names}")
+                        
+                    except Exception as e:
+                        logger.error(f"Auto-download failed: {e}")
+                else:
+                    logger.info("Auto-download disabled. Set LLM_PROXY_AUTO_DOWNLOAD_MODELS=true to enable.")
         else:
             logger.error(
                 f"Cannot connect to Ollama at {settings.ollama_base_url}. "
@@ -597,6 +631,138 @@ async def costs_endpoint():
     summary = COST_TRACKER.get_summary()
     details = COST_TRACKER.get_stats()
     return {"summary": summary, "details": details}
+
+
+@app.get("/system/gpu")
+async def gpu_info_endpoint():
+    """Get GPU information for automatic model selection.
+    
+    Returns detected GPUs and recommended models.
+    """
+    from .gpu_detector import detect_gpus, recommend_models_for_gpu
+    
+    gpu_info = detect_gpus()
+    recommendations = recommend_models_for_gpu(gpu_info)
+    
+    return {
+        "platform": gpu_info.platform,
+        "total_vram_gb": round(gpu_info.total_vram_gb, 1),
+        "free_vram_gb": round(gpu_info.free_vram_gb, 1),
+        "gpus": [
+            {
+                "name": gpu.name,
+                "total_vram_gb": round(gpu.total_vram_gb, 1),
+                "free_vram_gb": round(gpu.free_vram_gb, 1),
+                "driver_version": gpu.driver_version,
+            }
+            for gpu in gpu_info.gpus
+        ],
+        "recommended_models": [
+            {
+                "name": m["name"],
+                "vram_gb": m["vram_gb"],
+                "speed": m["speed"],
+                "quality": m["quality"],
+            }
+            for m in recommendations[:5]
+        ],
+    }
+
+
+@app.post("/models/download")
+async def download_model_endpoint(request: Request):
+    """Download a model to Ollama.
+    
+    Request body:
+    {
+        "model": "qwen2.5-coder:14b"
+    }
+    
+    Only available in local mode.
+    """
+    if not settings.local_mode:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Model download only available in local mode"},
+        )
+    
+    body = await request.json()
+    model_name = body.get("model")
+    
+    if not model_name:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Missing required field: model"},
+        )
+    
+    from .model_manager import ModelManager
+    
+    manager = ModelManager(ollama_base_url=settings.ollama_base_url)
+    
+    try:
+        status = await manager.download_model(model_name)
+        await manager.aclose()
+        
+        return {
+            "model": status.model_name,
+            "status": status.status,
+            "progress": status.progress,
+            "error": status.error_message,
+        }
+    except Exception as e:
+        await manager.aclose()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Download failed: {str(e)}"},
+        )
+
+
+@app.post("/models/auto-download")
+async def auto_download_models_endpoint():
+    """Automatically download recommended models based on GPU.
+    
+    Only available in local mode.
+    """
+    if not settings.local_mode:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Auto-download only available in local mode"},
+        )
+    
+    from .gpu_detector import detect_gpus
+    from .model_manager import ModelManager
+    
+    gpu_info = detect_gpus()
+    manager = ModelManager(
+        ollama_base_url=settings.ollama_base_url,
+        auto_download=True,
+        auto_download_best=settings.auto_download_best_only,
+    )
+    
+    try:
+        results = await manager.ensure_recommended_models(gpu_info=gpu_info)
+        await manager.aclose()
+        
+        return {
+            "gpu_info": {
+                "platform": gpu_info.platform,
+                "free_vram_gb": round(gpu_info.free_vram_gb, 1),
+            },
+            "downloads": [
+                {
+                    "model": r.model_name,
+                    "status": r.status,
+                    "error": r.error_message,
+                }
+                for r in results
+            ],
+        }
+    except Exception as e:
+        await manager.aclose()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Auto-download failed: {str(e)}"},
+        )
 
 
 @app.get("/v1/models")

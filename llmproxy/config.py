@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     local_mode: bool = False  # Enable local-only mode (no upstream API required)
     local_model: str = "qwen2.5-coder:14b"  # Default model for local mode
     
+    # Automatic model management
+    auto_download_models: bool = False  # Auto-download recommended models on startup
+    auto_download_best_only: bool = True  # Only download the best model (not top 3)
+    
     # Ollama local LLM integration
     ollama_base_url: str = "http://localhost:11434"
     ollama_api_key: str = ""  # Optional API key for Ollama (if behind auth proxy)
