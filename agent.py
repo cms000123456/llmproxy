@@ -1003,8 +1003,15 @@ def run(
                         sleep_time = 3  # First update after 3 seconds
                         time.sleep(sleep_time)
                         elapsed = sleep_time
-                        while elapsed < 60:  # Max 60 seconds of updates
-                            status.update(f"[bold yellow]Waiting (rate limit backoff) {elapsed}s...[/bold yellow]")
+                        while elapsed < 300:  # Max 5 minutes of updates
+                            # Format time nicely (show minutes when > 60s)
+                            if elapsed >= 60:
+                                mins = int(elapsed // 60)
+                                secs = int(elapsed % 60)
+                                time_str = f"{mins}m{secs:02d}s"
+                            else:
+                                time_str = f"{int(elapsed)}s"
+                            status.update(f"[bold yellow]Waiting (rate limit backoff) {time_str}...[/bold yellow]")
                             time.sleep(2)
                             elapsed += 2
                     
