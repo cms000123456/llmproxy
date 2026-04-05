@@ -243,6 +243,8 @@ PRICING = {
     "codellama:34b": {"input": 0.0, "output": 0.0, "local": True},
     "phi3:mini": {"input": 0.0, "output": 0.0, "local": True},
     "phi3:medium": {"input": 0.0, "output": 0.0, "local": True},
+    "gemma4": {"input": 0.0, "output": 0.0, "local": True},
+    "gemma4:latest": {"input": 0.0, "output": 0.0, "local": True},
     "gemma4:4b": {"input": 0.0, "output": 0.0, "local": True},
     "gemma4:12b": {"input": 0.0, "output": 0.0, "local": True},
     "gemma4:27b": {"input": 0.0, "output": 0.0, "local": True},
