@@ -189,6 +189,12 @@ When making code changes:
 2. Describe the key changes (not line-by-line)
 3. Show a brief diff-style summary of the most important changes
 4. Confirm the file was written successfully
+5. **If you make a mistake and overwrite a file**: Do NOT use git to restore it (this project may not be a git repo). Instead, read the file again to see its current state and rewrite it correctly.
+
+Git commands:
+- You MAY use git for git operations (status, log, etc.) if the project is a git repository
+- Do NOT assume git is available for file recovery - always check first with `git status`
+- If git is not available, you must fix mistakes by rewriting the file correctly
 """
 
 SYSTEM_PROMPT_BASE = _build_system_prompt()
