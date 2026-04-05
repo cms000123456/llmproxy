@@ -137,10 +137,23 @@ def _fetch_proxy_savings(base_url: str) -> dict:
     return {}
 
 
-SYSTEM_PROMPT_BASE = """You are a helpful coding assistant with direct access to the user's local filesystem.
+def _build_system_prompt() -> str:
+    """Build system prompt with dynamic date."""
+    from datetime import datetime, timezone
+    
+    # Get current UTC date
+    now = datetime.now(timezone.utc)
+    current_date = now.strftime("%Y-%m-%d")
+    
+    return f"""You are a helpful coding assistant with direct access to the user's local filesystem.
 You can read files, write files, run shell commands, list directories, and search code.
 
-CURRENT VERSIONS (as of 2026-04-04):
+IMPORTANT - CURRENT DATE/TIME:
+- Today is {current_date} UTC
+- For ANY question about current date, time, or "today", you MUST use the get_datetime tool
+- Do NOT use your training data or the date above - always use the tool for real-time info
+
+CURRENT VERSIONS (software as of {current_date}):
 - Python: 3.14 is the current version (3.14.0 released Oct 2025)
 - Docker base images: python:3.14-slim is available and recommended
 - Node.js: 22 LTS is current
@@ -155,7 +168,7 @@ Guidelines:
 - Keep shell commands safe and relevant.
 - If a task spans multiple steps, use tools iteratively and confirm each step.
 - Always summarize what you did in your final response.
-- When creating reports or documentation, use the current date (ask if unsure).
+- When creating reports or documentation, use the get_datetime tool to get the current date.
 - Do not invent or hallucinate file contents - always read files first.
 - Be concise in your responses and tool usage.
 - Use CURRENT versions from the list above, not outdated knowledge from your training data.
@@ -166,6 +179,8 @@ When making code changes:
 3. Show a brief diff-style summary of the most important changes
 4. Confirm the file was written successfully
 """
+
+SYSTEM_PROMPT_BASE = _build_system_prompt()
 
 # Build full system prompt with AGENT.md if it exists
 SYSTEM_PROMPT = SYSTEM_PROMPT_BASE + _load_agent_md()
