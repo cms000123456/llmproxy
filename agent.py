@@ -752,6 +752,9 @@ def run(
     history_path = Path.home() / ".local" / "share" / "llmproxy" / "history"
     history_path.mkdir(parents=True, exist_ok=True)
     session_history = FileHistory(str(history_path / f"{agent.project_id}.txt"))
+    
+    # Track last failed input for "continue" command
+    last_failed_input: Optional[str] = None
 
     try:
         while True:
@@ -945,6 +948,16 @@ def run(
                     f"[dim]Unknown command: {user_input}. Type /help for available commands.[/dim]"
                 )
                 continue
+            
+            elif user_input.lower() in ("continue", "retry", "again"):
+                # Retry the last failed input (e.g., after rate limit)
+                if last_failed_input:
+                    console.print(f"[dim]Retrying: {last_failed_input[:60]}{'...' if len(last_failed_input) > 60 else ''}[/dim]")
+                    user_input = last_failed_input
+                    last_failed_input = None  # Clear after retry
+                else:
+                    console.print("[dim yellow]⚠ No previous input to continue. Type a new prompt.[/dim yellow]")
+                    continue
     
             # Confirmation flow: agent states its understanding first
             if confirm_state[0]:
@@ -983,7 +996,13 @@ def run(
     
                 console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
                 console.print()  # Extra newline for spacing
+                
+                # Clear last failed input on success
+                last_failed_input = None
             except openai.RateLimitError as e:
+                # Store the failed input for retry with "continue"
+                last_failed_input = user_input
+                
                 # Handle rate limit errors with helpful suggestions
                 error_body = e.body if hasattr(e, 'body') else {}
                 error_msg = str(e)
@@ -992,7 +1011,7 @@ def run(
                     "The upstream API is rate-limiting requests. Options:\n\n"
                     "1. [cyan]/models[/cyan] - Switch to a different model\n"
                     "2. [cyan]/model <local-model>[/cyan] - Use a local Ollama model (no rate limits)\n"
-                    "3. Wait a moment and try again\n\n"
+                    "3. Type [cyan]continue[/cyan] to retry once rate limit clears\n\n"
                     f"[dim]Error: {error_msg[:100]}...[/dim]" if len(str(error_msg)) > 100 else f"[dim]Error: {error_msg}[/dim]",
                     title="Rate Limited",
                     border_style="red"
