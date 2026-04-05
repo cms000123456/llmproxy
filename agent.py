@@ -23,6 +23,7 @@ SLASH_COMMANDS = [
     ("/exit", "Save session and exit"),
     ("/quit", "Save session and exit (alias)"),
     ("/help", "Show available commands"),
+    ("/models", "List and select available models"),
     ("/usage", "Show token usage"),
     ("/savings", "Show proxy savings"),
     ("/confirm", "Enable confirmation before tasks"),
@@ -49,6 +50,58 @@ class SlashCommandCompleter(Completer):
 
 def _get_env(var: str, default: str = "") -> str:
     return os.getenv(var, default)
+
+
+def _fetch_models(base_url: str, api_key: str = "") -> list[dict]:
+    """Fetch available models from the proxy."""
+    import httpx
+    
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    
+    try:
+        resp = httpx.get(f"{base_url}/models", headers=headers, timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("data", [])
+    except Exception:
+        pass
+    return []
+
+
+def _display_models(models: list[dict], current_model: str) -> None:
+    """Display available models in a table."""
+    from rich.table import Table
+    
+    if not models:
+        console.print("[dim yellow]No models available.[/dim yellow]")
+        console.print("[dim]If using local mode, ensure Ollama is running with: ollama serve[/dim]")
+        return
+    
+    table = Table(title="Available Models")
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Model ID", style="green")
+    table.add_column("Owner", style="dim")
+    table.add_column("Status", style="yellow")
+    
+    for i, model in enumerate(models[:50], 1):  # Limit to 50 models
+        model_id = model.get("id", "unknown")
+        owned_by = model.get("owned_by", "unknown")
+        
+        # Highlight current model
+        if model_id == current_model:
+            status = "[bold green]● current[/bold green]"
+            model_id = f"[bold]{model_id}[/bold]"
+        else:
+            status = ""
+        
+        table.add_row(str(i), model_id, owned_by, status)
+    
+    console.print(table)
+    
+    if len(models) > 50:
+        console.print(f"[dim]... and {len(models) - 50} more models[/dim]")
 
 
 @app.command()
@@ -181,7 +234,7 @@ def run(
     console.print(
         Panel.fit(
             f"[bold green]Coding Agent[/bold green]\n"
-            f"[dim]Model:[/dim] {model}\n"
+            f"[dim]Model:[/dim] [cyan]{model}[/cyan] [dim](use /models to change)[/dim]\n"
             f"[dim]Workspace:[/dim] {os.getcwd()}\n"
             f"[dim]Session:[/dim] {session_short}...\n"
             f"{usage_str}\n"
@@ -235,6 +288,7 @@ def run(
                     "[bold cyan]Available Commands[/bold cyan]\n\n"
                     "[bold]Session Commands:[/bold]\n"
                     "  [cyan]/exit[/cyan], [cyan]/quit[/cyan]  - Save session and exit\n"
+                    "  [cyan]/models[/cyan]          - List and select available models\n"
                     "  [cyan]/usage[/cyan]          - Show current session token usage\n"
                     "  [cyan]/savings[/cyan]         - Show proxy savings (filtering/caching)\n"
                     "  [cyan]/help[/cyan]            - Show this help message\n\n"
@@ -260,6 +314,32 @@ def run(
                     title="Help",
                 )
             )
+            continue
+        elif user_input.lower() == "/models":
+            # Fetch and display available models
+            console.print("[dim]Fetching available models...[/dim]")
+            models = _fetch_models(base_url, api_key)
+            
+            if models:
+                _display_models(models, agent.model)
+                console.print("\n[dim]Enter a number to select a model, or press Enter to keep current.[/dim]")
+                
+                try:
+                    choice = pt_prompt("Select model #> ")
+                    if choice.strip():
+                        idx = int(choice.strip()) - 1
+                        if 0 <= idx < len(models):
+                            selected_model = models[idx]["id"]
+                            agent.model = selected_model
+                            console.print(f"[dim green]✓[/dim green] Switched to model: [bold]{selected_model}[/bold]")
+                        else:
+                            console.print("[dim red]Invalid selection.[/dim red]")
+                except ValueError:
+                    console.print("[dim]Keeping current model.[/dim]")
+                except Exception as e:
+                    console.print(f"[dim red]Error: {e}[/dim red]")
+            else:
+                _display_models([], agent.model)
             continue
         elif user_input.lower() == "/usage":
             console.print(agent.get_usage_summary())
