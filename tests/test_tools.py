@@ -446,7 +446,7 @@ class TestExecuteTool:
     @pytest.mark.asyncio
     async def test_async_tools_set(self):
         """Should have correct async tools registered."""
-        expected_async = {"read_file", "write_file", "grep"}
+        expected_async = {"read_file", "write_file", "grep", "search_web", "fetch_url", "http_request"}
         assert expected_async == ASYNC_TOOLS
         print("✓ Async tools set correct")
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import textwrap
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 from openai import OpenAI
@@ -16,6 +18,9 @@ from rich.prompt import Prompt
 from .tools import TOOL_DEFINITIONS, execute_tool
 
 console = Console()
+
+# Debug logging - set LLM_AGENT_DEBUG=1 to see raw LLM interactions
+DEBUG = os.getenv("LLM_AGENT_DEBUG", "").lower() in ("1", "true", "yes", "on")
 
 # Default AGENT.md content for /init command
 DEFAULT_AGENT_MD = """# Project Agent Configuration
@@ -248,6 +253,44 @@ def _list_sessions(project_id: str) -> list[dict]:
     return sessions
 
 
+def _debug_log(title: str, data: Any) -> None:
+    """Log debug information if DEBUG is enabled."""
+    if not DEBUG:
+        return
+    
+    # Print to stderr to avoid interfering with normal output
+    import sys
+    
+    print(f"\n{'='*60}", file=sys.stderr)
+    print(f"[DEBUG] {title}", file=sys.stderr)
+    print("="*60, file=sys.stderr)
+    
+    if isinstance(data, list):
+        # Log message list (conversation)
+        for i, msg in enumerate(data):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls")
+            
+            print(f"\n  [{i}] {role.upper()}:", file=sys.stderr)
+            if content:
+                # Truncate long content
+                content_str = str(content)
+                if len(content_str) > 500:
+                    content_str = content_str[:500] + "... [truncated]"
+                for line in content_str.split("\n"):
+                    print(f"      {line}", file=sys.stderr)
+            if tool_calls:
+                print(f"      tool_calls: {json.dumps(tool_calls, indent=2)}", file=sys.stderr)
+    elif isinstance(data, dict):
+        # Log dictionary (response)
+        print(json.dumps(data, indent=2, default=str), file=sys.stderr)
+    else:
+        print(str(data), file=sys.stderr)
+    
+    print("="*60 + "\n", file=sys.stderr)
+
+
 class Agent:
     def __init__(
         self,
@@ -257,11 +300,13 @@ class Agent:
         max_tool_rounds: int = 10,
         session_id: str | None = None,
         resume: bool = False,
+        debug: bool = False,
     ):
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
         self.max_tool_rounds = max_tool_rounds
         self.base_url = base_url
+        self.debug = debug or DEBUG
 
         # Session management
         self.project_id = _get_project_id()
@@ -463,6 +508,52 @@ class Agent:
                 f"[dim cyan]🔍 Searching[/dim cyan] [dim]'{pattern}' in {path}{glob_str}...[/dim]"
             )
 
+        elif name == "get_datetime":
+            tz = args.get("timezone_offset", "UTC")
+            fmt = args.get("format", "iso")
+            console.print(f"[dim white]🕐 Getting date/time[/dim white] [dim]({tz}, {fmt})...[/dim]")
+
+        elif name == "search_web":
+            query = args.get("query", "")
+            limit = args.get("limit", 5)
+            console.print(f"[dim blue]🌐 Searching web[/dim blue] [dim]'{query}' (max {limit} results)...[/dim]")
+
+        elif name == "fetch_url":
+            url = args.get("url", "")
+            console.print(f"[dim blue]📥 Fetching URL[/dim blue] [dim]{url[:60]}...[/dim]")
+
+        elif name == "glob_files":
+            pattern = args.get("pattern", "")
+            console.print(f"[dim cyan]🔍 Finding files[/dim cyan] [dim]pattern: {pattern}...[/dim]")
+
+        elif name == "delete_file":
+            path = args.get("path", "")
+            console.print(f"[dim red]🗑️  Deleting file[/dim red] [dim]{path}...[/dim]")
+
+        elif name == "python":
+            code = args.get("code", "")
+            lines = code.count("\n") + 1
+            console.print(f"[dim yellow]🐍 Running Python[/dim yellow] [dim]({lines} lines)...[/dim]")
+
+        elif name == "copy_file":
+            src = args.get("source", "")
+            dst = args.get("destination", "")
+            console.print(f"[dim blue]📋 Copying file[/dim blue] [dim]{src} → {dst}...[/dim]")
+
+        elif name == "move_file":
+            src = args.get("source", "")
+            dst = args.get("destination", "")
+            console.print(f"[dim magenta]📦 Moving file[/dim magenta] [dim]{src} → {dst}...[/dim]")
+
+        elif name == "http_request":
+            method = args.get("method", "GET")
+            url = args.get("url", "")
+            console.print(f"[dim blue]🌐 HTTP {method}[/dim blue] [dim]{url[:60]}...[/dim]")
+
+        elif name == "git":
+            cmd = args.get("command", "")
+            console.print(f"[dim cyan]📎 git {cmd}[/dim cyan]")
+
         else:
             # Generic fallback
             console.print(f"[dim]→ Tool call: {name}({json.dumps(args)})[/dim]")
@@ -518,6 +609,84 @@ class Agent:
             else:
                 console.print(f"[dim green]   ✓ {min(matches, 100)} matches found[/dim green]")
 
+        elif name == "get_datetime":
+            # Show the date/time result
+            console.print(f"[dim green]   ✓ {result[:80]}[/dim green]")
+
+        elif name == "search_web":
+            # Count search results
+            if "Error" in result:
+                console.print(f"[dim red]   ✗ {result[:80]}[/dim red]")
+            else:
+                # Count results (they're numbered like "1. Title")
+                import re
+                count = len(re.findall(r'^\d+\.', result, re.MULTILINE))
+                console.print(f"[dim green]   ✓ Found {count} results[/dim green]")
+
+        elif name == "fetch_url":
+            # Show fetched URL
+            if "Error" in result:
+                console.print(f"[dim red]   ✗ Failed to fetch URL[/dim red]")
+            else:
+                lines = result.split("\n")
+                title_line = [l for l in lines if l.startswith("Title:")]
+                if title_line:
+                    title = title_line[0].replace("Title:", "").strip()[:60]
+                    console.print(f"[dim green]   ✓ Fetched: {title}...[/dim green]")
+                else:
+                    console.print(f"[dim green]   ✓ URL fetched[/dim green]")
+
+        elif name == "glob_files":
+            # Count matches
+            if "No files" in result:
+                console.print("[dim yellow]   ⚠ No files found[/dim yellow]")
+            else:
+                count = result.count("\n  ") - 1  # Count indented lines
+                console.print(f"[dim green]   ✓ Found {max(0, count)} files[/dim green]")
+
+        elif name == "delete_file":
+            if result.startswith("Success"):
+                console.print("[dim green]   ✓ File deleted[/dim green]")
+            else:
+                console.print(f"[dim red]   ✗ {result}[/dim red]")
+
+        elif name == "python":
+            if "Error" in result:
+                console.print("[dim red]   ✗ Python execution failed[/dim red]")
+            else:
+                console.print("[dim green]   ✓ Code executed[/dim green]")
+
+        elif name == "copy_file":
+            if result.startswith("Success"):
+                console.print("[dim green]   ✓ File copied[/dim green]")
+            else:
+                console.print(f"[dim red]   ✗ {result}[/dim red]")
+
+        elif name == "move_file":
+            if result.startswith("Success"):
+                console.print("[dim green]   ✓ File moved[/dim green]")
+            else:
+                console.print(f"[dim red]   ✗ {result}[/dim red]")
+
+        elif name == "http_request":
+            if "Error" in result:
+                console.print("[dim red]   ✗ Request failed[/dim red]")
+            else:
+                # Extract status code
+                status_line = [l for l in result.split("\n") if l.startswith("Status:")]
+                if status_line:
+                    status = status_line[0].replace("Status:", "").strip()
+                    color = "green" if status.startswith("2") else "yellow" if status.startswith("3") else "red"
+                    console.print(f"[dim {color}]   ✓ Status {status}[/dim {color}]")
+                else:
+                    console.print("[dim green]   ✓ Request completed[/dim green]")
+
+        elif name == "git":
+            if "Error" in result:
+                console.print("[dim red]   ✗ Git command failed[/dim red]")
+            else:
+                console.print("[dim green]   ✓ Git command completed[/dim green]")
+
         else:
             # Generic fallback
             display = result[:max_display_len] + "..." if len(result) > max_display_len else result
@@ -569,6 +738,9 @@ class Agent:
 
         # Save after adding user message
         self._save()
+        
+        # Debug: log messages being sent
+        _debug_log(f"SENDING TO LLM ({self.model})", self.messages)
 
         for round_num in range(self.max_tool_rounds):
             response = self.client.chat.completions.create(
@@ -577,6 +749,37 @@ class Agent:
                 tools=TOOL_DEFINITIONS,
                 temperature=0.3,
             )
+            
+            # Debug: log raw response
+            if self.debug:
+                resp_dict = {
+                    "id": response.id,
+                    "model": response.model,
+                    "usage": {
+                        "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
+                        "completion_tokens": response.usage.completion_tokens if response.usage else None,
+                    },
+                    "choices": [
+                        {
+                            "finish_reason": c.finish_reason,
+                            "message": {
+                                "role": c.message.role,
+                                "content": c.message.content,
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "function": {
+                                            "name": tc.function.name,
+                                            "arguments": tc.function.arguments,
+                                        }
+                                    } for tc in (c.message.tool_calls or [])
+                                ] if c.message.tool_calls else None,
+                            }
+                        }
+                        for c in response.choices
+                    ]
+                }
+                _debug_log("LLM RESPONSE", resp_dict)
 
             # Track token usage
             self._update_usage(response)

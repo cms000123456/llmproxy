@@ -9,6 +9,11 @@ import typer
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.application import get_app
+from prompt_toolkit.key_binding.key_processor import KeyPressEvent
+from prompt_toolkit.shortcuts import CompleteStyle
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -52,24 +57,93 @@ for category, commands in COMMAND_CATEGORIES.items():
             SLASH_COMMANDS.append((alias, f"Alias for {cmd}"))
 
 
+# Completion menu style
+COMPLETION_STYLE = Style.from_dict({
+    'completion-menu': 'bg:#2b2b2b #ffffff',
+    'completion-menu.completion': 'bg:#2b2b2b #ffffff',
+    'completion-menu.completion.current': 'bg:#005f87 #ffffff bold',
+    'completion-menu.meta.completion': 'bg:#2b2b2b #a0a0a0',
+    'completion-menu.meta.completion.current': 'bg:#005f87 #c0c0c0',
+})
+
+
 class SlashCommandCompleter(Completer):
-    """Completer for slash commands."""
+    """Enhanced completer for slash commands with visual feedback."""
 
     def get_completions(self, document, complete_event):
         text = document.text
-        if text.startswith("/"):
+        if not text or text.startswith("/"):
+            # Show all commands when just "/" is typed, or filter if there's more
+            search_text = text.lower()
             for cmd, desc in SLASH_COMMANDS:
-                if cmd.startswith(text):
+                if cmd.startswith(search_text):
+                    # Highlight the matched part
+                    if search_text and len(search_text) > 1:
+                        display = HTML(f'<b>{cmd[:len(search_text)]}</b>{cmd[len(search_text):]}')
+                    else:
+                        display = cmd
+                    
                     yield Completion(
                         cmd,
                         start_position=-len(text),
-                        display=cmd,
+                        display=display,
                         display_meta=desc,
+                        style='class:completion-menu.completion',
+                        selected_style='class:completion-menu.completion.current',
                     )
+    
+    def get_completion_for_index(self, index: int) -> Optional[str]:
+        """Get command by index (for number selection)."""
+        if 0 <= index < len(SLASH_COMMANDS):
+            return SLASH_COMMANDS[index][0]
+        return None
 
 
 def _get_env(var: str, default: str = "") -> str:
     return os.getenv(var, default)
+
+
+def _format_status_footer(agent, gpu_info: Optional[dict] = None, confirm_status: str = "") -> str:
+    """Format a compact status footer with key stats.
+    
+    Returns a Rich-formatted string showing:
+    - Model name (truncated)
+    - Token usage
+    - Estimated cost
+    - Cache/proxy savings
+    - GPU info if available
+    """
+    parts = []
+    
+    # Model (truncated)
+    model = agent.model
+    if len(model) > 20:
+        model = model[:18] + ".."
+    parts.append(f"[cyan]{model}[/cyan]")
+    
+    # Token usage
+    usage = agent.get_usage_summary()
+    # Extract just the numbers from the usage string
+    # Format: "Tokens: 1,234 (567↑ 789↓) | Est: $0.01"
+    parts.append(usage.replace("[dim]", "").replace("[/dim]", ""))
+    
+    # Proxy savings (if any)
+    savings = agent.get_proxy_savings()
+    if "tokens filtered" in savings or "cached" in savings:
+        savings_clean = savings.replace("[dim]", "").replace("[/dim]", "").replace("Proxy: ", "")
+        parts.append(f"[green]{savings_clean}[/green]")
+    
+    # GPU info
+    if gpu_info:
+        free_vram = gpu_info.get("free_vram_gb", 0)
+        if free_vram > 0:
+            parts.append(f"[dim]VRAM: {free_vram:.1f}G[/dim]")
+    
+    # Confirm status
+    if confirm_status:
+        parts.append(confirm_status)
+    
+    return " | ".join(parts)
 
 
 def _fetch_models(base_url: str, api_key: str = "") -> list[dict]:
@@ -143,7 +217,7 @@ def _display_models_enhanced(
     
     if not models:
         console.print("[dim yellow]No models available.[/dim yellow]")
-        console.print("[dim]If using local mode, ensure Ollama is running with: ollama serve[/dim]")
+        console.print("[dim]If using local/hybrid mode, ensure Ollama is running with: ollama serve[/dim]")
         if gpu_info:
             console.print(f"\n[dim]GPU: {gpu_info.get('platform', 'unknown')} | "
                          f"VRAM: {gpu_info.get('free_vram_gb', 0):.1f} GB free[/dim]")
@@ -203,9 +277,25 @@ def _display_models_enhanced(
     
     console.print(tree)
     
+    # Show GPU and Ollama status
+    status_parts = []
     if gpu_info:
-        console.print(f"\n[dim]GPU: {gpu_info.get('platform', 'unknown')} | "
-                     f"VRAM: {gpu_info.get('free_vram_gb', 0):.1f} GB free[/dim]")
+        status_parts.append(f"GPU: {gpu_info.get('platform', 'unknown')} | "
+                          f"VRAM: {gpu_info.get('free_vram_gb', 0):.1f} GB free")
+        
+        # Show Ollama status in hybrid mode
+        ollama_available = gpu_info.get('ollama_available', False)
+        local_mode = gpu_info.get('local_mode', False)
+        
+        if local_mode:
+            status_parts.append("Mode: local-only")
+        elif ollama_available:
+            status_parts.append("Ollama: available (hybrid mode)")
+        else:
+            status_parts.append("Ollama: not available")
+    
+    if status_parts:
+        console.print(f"\n[dim]{' | '.join(status_parts)}[/dim]")
 
 
 def _show_help_panel(get_confirm_status) -> None:
@@ -234,10 +324,12 @@ def _show_help_panel(get_confirm_status) -> None:
         f"  Current: {get_confirm_status()}",
         "",
         "[bold]Tips:[/bold]",
-        "  • Type [cyan]/[/cyan] then press Tab to see all commands",
+        "  • Type [cyan]/[/cyan] then press [cyan]Tab[/cyan] to see all commands (with autocomplete)",
+        "  • Press [cyan]Ctrl+Space[/cyan] to force show completions",
         "  • Use [cyan]/model <name>[/cyan] for quick model switching",
         "  • Sessions auto-save and are isolated per project",
         "  • Resume later with: [cyan]./llmproxy.sh agent --resume[/cyan]",
+        "  • [cyan]Hybrid mode[/cyan]: Ollama models (with :tag) are routed locally"
     ])
     
     console.print(Panel.fit("\n".join(help_lines), title="Help", border_style="cyan"))
@@ -352,6 +444,12 @@ def run(
         "-t",
         help="Maximum number of tool call rounds per request (env: LLM_AGENT_MAX_TOOL_ROUNDS)",
     ),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        "-d",
+        help="Enable debug logging of LLM interactions (env: LLM_AGENT_DEBUG)",
+    ),
     prompt: str = typer.Argument("", help="Single prompt to run non-interactively"),
 ):
     # Handle list sessions
@@ -400,6 +498,7 @@ def run(
         session_id=session_id if session_id else None,
         resume=resume,
         max_tool_rounds=max_tool_rounds,
+        debug=debug,
     )
 
     if prompt:
@@ -460,6 +559,11 @@ def run(
         """? to show help."""
         event.app.exit(result="/help")
 
+    @bindings.add("c-space")
+    def _(event):
+        """Ctrl+Space to force show completions."""
+        event.app.current_buffer.complete_next()
+
     # Ctrl-C is not bound - it will cancel input naturally (raise KeyboardInterrupt)
 
     # Show available commands hint on startup
@@ -467,21 +571,32 @@ def run(
         " | ".join([f"[cyan]{cmd}[/cyan]" for cmd, _, _ in COMMAND_CATEGORIES["Session"][:2]])
         + " | [cyan]/m[/cyan] | [cyan]/h[/cyan]"
     )
-    console.print(f"[dim]Quick: {commands_hint} | Type / for all commands[/dim]")
+    console.print(f"[dim]Quick: {commands_hint} | Type / then Tab for commands[/dim]")
     console.print()
 
     # Cache models list to avoid repeated fetching
     cached_models: Optional[list[dict]] = None
+    
+    # Pre-fetch GPU info for status bar
+    gpu_info = _fetch_gpu_info(base_url, api_key)
 
     while True:
+        # Show status footer before each prompt
+        footer = _format_status_footer(agent, gpu_info, get_confirm_status())
+        console.print(f"[dim]╭─ {footer}[/dim]")
+        
         try:
             # Use prompt_toolkit for better UX (autocompletion, etc.)
             user_input = pt_prompt(
                 "> ",
                 completer=SlashCommandCompleter(),
                 complete_while_typing=True,
+                complete_style=CompleteStyle.MULTI_COLUMN,
                 key_bindings=bindings,
                 enable_history_search=True,
+                style=COMPLETION_STYLE,
+                # Show completion menu on tab even when text is empty
+                reserve_space_for_menu=8,
             )
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]Session saved. Goodbye.[/dim]")
@@ -635,8 +750,11 @@ def run(
                 reply = agent.chat(user_input)
 
             console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
-            console.print(agent.get_usage_summary())
-            console.print(agent.get_proxy_savings())
+            
+            # Show updated status footer after response
+            footer = _format_status_footer(agent, gpu_info, get_confirm_status())
+            console.print(f"[dim]╰─ {footer}[/dim]")
+            console.print()  # Extra newline for spacing
         except openai.APIError as e:
             console.print(f"\n[dim red]API Error ({e.__class__.__name__}): {e}[/dim red]")
         except KeyboardInterrupt:
