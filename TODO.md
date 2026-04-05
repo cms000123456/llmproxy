@@ -49,6 +49,19 @@
   - **Time Estimate:** 2-3 days
   - **Depends on:** TODO-004 (graceful shutdown for stream cleanup)
 
+- [x] ~~**TODO-NEW:**~~ Local-only mode with Ollama (Offline)
+  - **File:** `llmproxy/local_provider.py` (new)
+  - **Features:** 
+    - Run entirely offline without upstream API
+    - OpenAI-compatible endpoints using Ollama
+    - Model aliases (local-coder, local-deepseek, etc.)
+    - Support for Qwen2.5-Coder, DeepSeek, CodeLlama
+  - **Config:** `local_mode: bool`, `local_model: str`
+  - **Scripts:** `scripts/setup-local-models.sh` for easy setup
+  - **Docs:** `LOCAL_MODELS.md` with hardware requirements and recommendations
+  - **Time Estimate:** 1 day
+  - **Note:** Completed 2026-04-04
+
 - [x] ~~**TODO-006:**~~ Convert file I/O to async (aiofiles)
   - **File:** `llmproxy/tools.py`
   - **Functions:** `read_file()`, `write_file()`, `grep()`

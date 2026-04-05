@@ -25,6 +25,7 @@ from .compressors import compress_messages, count_message_tokens, count_tokens
 from .config import settings
 from .cost_tracker import COST_TRACKER, check_budget, record_api_key_usage
 from .filters import filter_messages
+from .local_provider import LocalProvider, get_local_provider
 from .logging_config import configure_logging, get_logger
 from .metrics import METRICS
 from .metrics.prometheus import get_prometheus_metrics_text
@@ -438,20 +439,48 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting LLM Proxy server...")
 
-    # Avoid double /v1 when base_url already ends with it and client sends /v1/chat/completions
-    base_url = settings.upstream_base_url
-    if base_url.rstrip("/").endswith("/v1"):
-        base_url = base_url.rstrip("/")[:-3]
-    default_headers = {}
-    if settings.upstream_api_key:
-        default_headers["Authorization"] = f"Bearer {settings.upstream_api_key}"
-    if settings.kimi_code_compat:
-        default_headers.update(_kimi_code_headers())
-    _http_client = httpx.AsyncClient(
-        base_url=base_url,
-        headers=default_headers,
-        timeout=httpx.Timeout(120.0, connect=10.0),
-    )
+    # Local mode: use Ollama instead of upstream API
+    if settings.local_mode:
+        logger.info("LOCAL MODE ENABLED - Using Ollama for all requests")
+        logger.info(f"Local model: {settings.local_model}")
+        logger.info(f"Ollama URL: {settings.ollama_base_url}")
+        
+        local_provider = get_local_provider()
+        if await local_provider.is_available():
+            models = await local_provider.list_models()
+            model_names = [m["id"] for m in models]
+            logger.info(f"Available local models: {model_names}")
+            
+            # Check if default model is available
+            if settings.local_model not in model_names:
+                logger.warning(
+                    f"Default model '{settings.local_model}' not found. "
+                    f"Run: ollama pull {settings.local_model}"
+                )
+        else:
+            logger.error(
+                f"Cannot connect to Ollama at {settings.ollama_base_url}. "
+                "Is Ollama running? Install from https://ollama.com"
+            )
+        _http_client = None  # No upstream in local mode
+    else:
+        # Normal upstream mode
+        # Avoid double /v1 when base_url already ends with it and client sends /v1/chat/completions
+        base_url = settings.upstream_base_url
+        if base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/")[:-3]
+        default_headers = {}
+        if settings.upstream_api_key:
+            default_headers["Authorization"] = f"Bearer {settings.upstream_api_key}"
+        if settings.kimi_code_compat:
+            default_headers.update(_kimi_code_headers())
+        _http_client = httpx.AsyncClient(
+            base_url=base_url,
+            headers=default_headers,
+            timeout=httpx.Timeout(120.0, connect=10.0),
+        )
+        logger.info(f"Connected to upstream: {base_url}")
+
     # Initialize storage backend
     if settings.enable_cache:
         try:
@@ -469,7 +498,6 @@ async def lifespan(app: FastAPI):
     else:
         _cache = None
 
-    logger.info(f"Connected to upstream: {base_url}")
     logger.info(
         f"Cache initialized: max_size={settings.cache_max_size}, ttl={settings.cache_ttl_seconds}s"
     )
@@ -503,6 +531,11 @@ async def lifespan(app: FastAPI):
         logger.info("Closing HTTP client connections...")
         await _http_client.aclose()
 
+    # Close local provider if in local mode
+    if settings.local_mode:
+        local_provider = get_local_provider()
+        await local_provider.aclose()
+
     # Log final metrics
     if _cache:
         stats = _cache.stats()
@@ -527,7 +560,21 @@ app.add_middleware(InflightRequestMiddleware)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "inflight_requests": _inflight_requests}
+    health_data = {
+        "status": "ok",
+        "inflight_requests": _inflight_requests,
+        "local_mode": settings.local_mode,
+    }
+    
+    if settings.local_mode:
+        local_provider = get_local_provider()
+        ollama_available = await local_provider.is_available()
+        health_data["ollama_available"] = ollama_available
+        if not ollama_available:
+            health_data["status"] = "degraded"
+            health_data["warning"] = f"Ollama not available at {settings.ollama_base_url}"
+    
+    return health_data
 
 
 @app.get("/metrics")
@@ -550,6 +597,31 @@ async def costs_endpoint():
     summary = COST_TRACKER.get_summary()
     details = COST_TRACKER.get_stats()
     return {"summary": summary, "details": details}
+
+
+@app.get("/v1/models")
+async def list_models_endpoint():
+    """List available models - OpenAI compatible.
+    
+    In local mode, returns Ollama models.
+    In proxy mode, forwards to upstream.
+    """
+    if settings.local_mode:
+        local_provider = get_local_provider()
+        models = await local_provider.list_models()
+        return {"object": "list", "data": models}
+    else:
+        # Forward to upstream
+        if _http_client is None:
+            return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
+        try:
+            resp = await _http_client.get("/v1/models")
+            return JSONResponse(
+                status_code=resp.status_code,
+                content=resp.json(),
+            )
+        except Exception as e:
+            return JSONResponse(status_code=502, content={"error": str(e)})
 
 
 @app.get("/ab-test/status")
@@ -715,6 +787,48 @@ async def proxy(request: Request, path: str):
     is_chat_completion = path in ("chat/completions", "v1/chat/completions") or path.endswith(
         "/chat/completions"
     )
+
+    # LOCAL MODE: Route chat completions to local Ollama provider
+    if settings.local_mode and is_chat_completion:
+        local_provider = get_local_provider()
+        
+        # Use configured local model if not specified in request
+        model = payload.get("model") or settings.local_model
+        messages = payload.get("messages", [])
+        stream = payload.get("stream", False)
+        temperature = payload.get("temperature", 0.7)
+        max_tokens = payload.get("max_tokens")
+        
+        try:
+            result = await local_provider.chat_completions(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+            )
+            
+            # Record metrics
+            if isinstance(result, dict):
+                usage = result.get("usage", {})
+                METRICS.record_request(
+                    upstream_tokens=usage.get("prompt_tokens", 0),
+                    downstream_tokens=usage.get("completion_tokens", 0),
+                    cached=False,
+                    tokens_saved_filtering=0,
+                    latency_ms=0,  # TODO: track actual latency
+                )
+                return JSONResponse(content=result)
+            else:
+                # Streaming response
+                return result
+                
+        except Exception as e:
+            logger.error(f"Local provider error: {e}")
+            return JSONResponse(
+                status_code=502,
+                content={"error": f"Local model error: {str(e)}"},
+            )
 
     # Check if this is a streaming request
     is_streaming = is_chat_completion and payload.get("stream")

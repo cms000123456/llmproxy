@@ -8,6 +8,7 @@ Complete documentation index for the LLM Proxy project.
 |----------|---------|----------|
 | **[README.md](README.md)** | Project overview, quick start, features | Everyone |
 | **[HOWTO.md](HOWTO.md)** | Detailed how-to guides | Users, Operators |
+| **[LOCAL_MODELS.md](LOCAL_MODELS.md)** | Local/offline LLM setup | Users (Privacy-focused) |
 | **[LOAD_TESTING.md](LOAD_TESTING.md)** | Performance testing guide | DevOps, Engineers |
 | **[TODO.md](TODO.md)** | Development roadmap | Contributors |
 | **[monitoring/README.md](monitoring/README.md)** | Observability setup | Operators |

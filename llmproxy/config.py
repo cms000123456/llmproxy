@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     max_total_tokens: int = 120000  # target token budget for the full prompt
     summary_model: str = "moonshot-v1-8k"  # cheaper model for summarization
 
+    # Local LLM Mode (Ollama) - Run entirely offline without upstream API
+    local_mode: bool = False  # Enable local-only mode (no upstream API required)
+    local_model: str = "qwen2.5-coder:14b"  # Default model for local mode
+    
     # Ollama local LLM integration
     ollama_base_url: str = "http://localhost:11434"
     ollama_api_key: str = ""  # Optional API key for Ollama (if behind auth proxy)

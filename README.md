@@ -8,6 +8,7 @@ A lightweight, OpenAI-compatible proxy that sits between your application and a 
 - **Conversation Compression**: Keeps the system prompt and recent messages. Optionally uses a **local Ollama model** to summarize old context instead of bluntly deleting it.
 - **Relevance Filtering (Ollama)**: Ask a local model to score older messages against the latest user query and drop low-relevance fluff.
 - **Response Caching**: Caches identical requests in memory with TTL to avoid redundant paid API calls.
+- **🏠 Local Mode (Offline)**: Run entirely offline with local models (Qwen2.5-Coder, DeepSeek, CodeLlama). No API keys needed, complete privacy.
 - **🔐 API Key Authentication**: Secure your proxy with API key authentication. Supports Bearer tokens and X-API-Key headers.
 - **🛡️ PII Sanitization**: Automatically redacts sensitive data (credit cards, emails, API keys, SSNs) from requests and responses.
 - **📊 Metrics & Monitoring**: Prometheus metrics endpoint + Grafana dashboards for real-time visibility into requests, cache performance, tokens saved, and latency.
@@ -70,6 +71,38 @@ docker exec ollama ollama pull llama3.2
 ```
 
 > **Note:** The Ollama container is configured with GPU support (`deploy.resources.reservations.devices`). The proxy will talk to Ollama automatically on the internal Docker network at `http://ollama:11434`.
+
+## 🏠 Quick Start (Local Models - Offline)
+
+Run completely offline with local LLMs - no API keys, no internet, complete privacy:
+
+```bash
+# 1. Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 2. Setup recommended models for your hardware
+./scripts/setup-local-models.sh
+
+# 3. Configure for local mode
+cat > .env << 'EOF'
+LLM_PROXY_LOCAL_MODE=true
+LLM_PROXY_LOCAL_MODEL=qwen2.5-coder:14b
+LLM_PROXY_AUTH_ENABLED=false
+EOF
+
+# 4. Start proxy
+./llmproxy.sh proxy
+
+# 5. Use with the agent (no cloud needed!)
+./llmproxy.sh agent --model local-coder
+```
+
+**Recommended Models:**
+- `qwen2.5-coder:14b` - Best balance (16GB VRAM)
+- `qwen2.5-coder:7b` - Fast, laptops (8GB VRAM)
+- `deepseek-coder:6.7b` - Algorithms, math (8GB VRAM)
+
+See [LOCAL_MODELS.md](LOCAL_MODELS.md) for full details.
 
 ## Usage with a Client
 
