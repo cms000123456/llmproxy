@@ -718,7 +718,7 @@ def run(
             f"{usage_str}\n"
             f"{savings_str}\n"
             f"{get_confirm_status()}\n"
-            f"[dim]Commands:[/dim] Type [bold]'/help'[/bold] or press [bold]'?'[/bold]",
+            f"[dim]Commands:[/dim] Type [bold]'/help'[/bold] for available commands",
             title="Welcome",
         )
     )
@@ -730,11 +730,6 @@ def run(
     def _(event):
         """Ctrl-D to exit gracefully."""
         event.app.exit(result="/exit")
-
-    @bindings.add("?")
-    def _(event):
-        """? to show help."""
-        event.app.exit(result="/help")
 
     @bindings.add("c-space")
     def _(event):
