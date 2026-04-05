@@ -172,6 +172,7 @@ Guidelines:
 - Do not invent or hallucinate file contents - always read files first.
 - Be concise in your responses and tool usage.
 - Use CURRENT versions from the list above, not outdated knowledge from your training data.
+- **FOR NEWS/WEB CONTENT**: Use search_web to find sources, then use fetch_url to READ the actual article content. Don't just return search result titles.
 
 When making code changes:
 1. First explain the approach and what files you'll modify
