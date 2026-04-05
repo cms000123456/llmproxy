@@ -945,7 +945,91 @@ class Agent:
             user_input = user_input[:200] + "..."
         return f"**You asked:** {user_input}"
 
+    def _should_use_subagent(self, task: str) -> tuple[bool, str]:
+        """Determine if a task should use a subagent.
+        
+        Returns:
+            (use_subagent: bool, reason: str)
+        """
+        task_lower = task.lower()
+        
+        # Quick formatting tasks - use subagent
+        quick_patterns = [
+            ("format", "formatting"),
+            ("reformat", "formatting"),
+            ("pretty print", "formatting"),
+            ("summarize", "summarization"),
+            ("summary", "summarization"),
+            ("extract", "extraction"),
+            ("validate", "validation"),
+            ("check syntax", "syntax check"),
+            ("count lines", "simple counting"),
+            ("count words", "simple counting"),
+            ("fix indentation", "formatting"),
+            ("minify", "formatting"),
+            ("beautify", "formatting"),
+        ]
+        
+        for pattern, reason in quick_patterns:
+            if pattern in task_lower:
+                return True, reason
+        
+        # Single file operations that are simple
+        simple_file_ops = [
+            "read file",
+            "show content",
+            "display file",
+            "view file",
+        ]
+        for op in simple_file_ops:
+            if op in task_lower and len(task) < 200:
+                return True, "simple file read"
+        
+        # Text processing without context needs
+        if len(task) < 150 and not any(x in task_lower for x in [
+            "project", " codebase", " refactor", " implement", 
+            "architecture", "design", "complex", "multiple files"
+        ]):
+            # Very short tasks likely don't need full context
+            words = task.split()
+            if len(words) < 20:
+                return True, "simple short task"
+        
+        return False, ""
+
     def chat(self, user_input: str) -> str:
+        # Check if we should use a subagent for this task
+        use_subagent, reason = self._should_use_subagent(user_input)
+        
+        if use_subagent and self.debug:
+            _debug_log("SUBAGENT ROUTING", f"Task routed to subagent: {reason}", force=self.debug)
+        
+        if use_subagent:
+            # Use subagent for simple tasks
+            sub = self.spawn_subagent()
+            
+            # Show user that subagent is handling this (if not in debug, still show briefly)
+            from rich.console import Console
+            console = Console()
+            console.print(f"[dim cyan]🔄 Using subagent ({reason})...[/dim cyan]")
+            
+            result = sub.task(user_input)
+            
+            # Add to conversation context so main agent knows what happened
+            self.messages.append({"role": "user", "content": user_input})
+            self.messages.append({"role": "assistant", "content": result})
+            self._save()
+            
+            # Show subagent savings
+            sub_usage = sub.get_usage_summary()
+            console.print(f"[dim green]✓ {sub_usage}[/dim green]")
+            
+            if self.debug:
+                _debug_log("SUBAGENT RESULT", sub_usage, force=self.debug)
+            
+            return result
+        
+        # Main agent path for complex tasks
         self.messages.append({"role": "user", "content": user_input})
 
         # Save after adding user message
