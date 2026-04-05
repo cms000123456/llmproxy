@@ -127,11 +127,16 @@ def _format_status_footer(agent, gpu_info: Optional[dict] = None, confirm_status
     # Format: "Tokens: 1,234 (567↑ 789↓) | Est: $0.01"
     parts.append(usage.replace("[dim]", "").replace("[/dim]", ""))
     
-    # Proxy savings (if any)
+    # Proxy savings (show if available, even if zero)
     savings = agent.get_proxy_savings()
-    if "tokens filtered" in savings or "cached" in savings:
-        savings_clean = savings.replace("[dim]", "").replace("[/dim]", "").replace("Proxy: ", "")
+    if "Proxy saved:" in savings:
+        # Has actual savings data
+        savings_clean = savings.replace("[dim]", "").replace("[/dim]", "").replace("[dim green]", "").replace("[/dim green]", "")
         parts.append(f"[green]{savings_clean}[/green]")
+    elif "Proxy: not available" not in savings:
+        # Proxy is available but may have no savings yet
+        savings_clean = savings.replace("[dim]", "").replace("[/dim]", "").replace("[dim green]", "").replace("[/dim green]", "")
+        parts.append(f"[dim]{savings_clean}[/dim]")
     
     # Local model savings (if using local model)
     local_savings = agent.get_local_savings()
