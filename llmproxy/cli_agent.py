@@ -172,7 +172,17 @@ Guidelines:
 - Do not invent or hallucinate file contents - always read files first.
 - Be concise in your responses and tool usage.
 - Use CURRENT versions from the list above, not outdated knowledge from your training data.
-- **FOR NEWS/WEB CONTENT**: Use search_web to find sources, then use fetch_url to READ the actual article content. Don't just return search result titles.
+- **FOR NEWS/WEB CONTENT**: 
+  1. Use search_web to find relevant news sources
+  2. Extract the ACTUAL website URLs from the results (not the duckduckgo redirect URLs)
+  3. Call fetch_url with the real website URLs to READ the article content
+  4. Summarize the actual content from the articles
+  
+  Example workflow for news:
+  - search_web: {"query": "EU news today", "limit": 3}
+  - (get results with URLs like "//duckduckgo.com/l/?uddg=https%3A%2F%2Fbbc.com...")
+  - fetch_url: {"url": "https://www.bbc.com/news/...", "max_length": 5000}
+  - Summarize the fetched content for the user
 
 When making code changes:
 1. First explain the approach and what files you'll modify
