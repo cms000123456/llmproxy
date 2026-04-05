@@ -273,10 +273,10 @@ class LocalProvider:
         
         Returns (content, tool_calls) where tool_calls is None if no tools were called.
         """
-        if "TOOL:" not in content:
+        if not content:
             return content, None
-        
-        # Extract tool calls
+            
+        # Try to find explicit TOOL:/ARGS: format
         tool_calls = []
         lines = content.split("\n")
         i = 0
@@ -298,29 +298,83 @@ class LocalProvider:
                 try:
                     args = json.loads(args_str) if args_str else {}
                 except json.JSONDecodeError:
-                    args = {"raw": args_str}
+                    # Try to fix common JSON issues
+                    try:
+                        # Handle single quotes, trailing commas
+                        fixed = args_str.replace("'", '"')
+                        fixed = fixed.rstrip(',').rstrip()
+                        # Ensure it starts with { and ends with }
+                        if not fixed.startswith('{'):
+                            fixed = '{' + fixed
+                        if not fixed.endswith('}'):
+                            fixed = fixed + '}'
+                        args = json.loads(fixed)
+                    except json.JSONDecodeError:
+                        args = {"raw": args_str}
                 
-                tool_calls.append({
-                    "id": f"call_{tool_call_id}",
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": json.dumps(args),
-                    }
-                })
-                tool_call_id += 1
+                if tool_name:  # Only add if we have a tool name
+                    tool_calls.append({
+                        "id": f"call_{tool_call_id}",
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(args),
+                        }
+                    })
+                    tool_call_id += 1
             
             i += 1
+        
+        # If no TOOL: format found, try to extract from markdown code blocks
+        # Models sometimes put JSON in ```json blocks
+        if not tool_calls:
+            import re
+            json_blocks = re.findall(r'```(?:json)?\s*(\{[^`]+\})\s*```', content, re.DOTALL)
+            for block in json_blocks:
+                try:
+                    data = json.loads(block.strip())
+                    if isinstance(data, dict) and 'query' in data:
+                        # This looks like search_web args
+                        tool_calls.append({
+                            "id": f"call_{tool_call_id}",
+                            "type": "function", 
+                            "function": {
+                                "name": "search_web",
+                                "arguments": json.dumps(data),
+                            }
+                        })
+                        tool_call_id += 1
+                    elif isinstance(data, dict) and 'url' in data:
+                        # This looks like fetch_url args
+                        tool_calls.append({
+                            "id": f"call_{tool_call_id}",
+                            "type": "function",
+                            "function": {
+                                "name": "fetch_url",
+                                "arguments": json.dumps(data),
+                            }
+                        })
+                        tool_call_id += 1
+                except json.JSONDecodeError:
+                    pass
         
         # Remove tool instructions from content
         clean_lines = []
         skip_next = False
+        in_json_block = False
         for i, line in enumerate(lines):
+            stripped = line.strip()
+            
             if skip_next:
                 skip_next = False
                 continue
-            if line.strip().startswith("TOOL:"):
+            if stripped.startswith("TOOL:"):
                 skip_next = True  # Skip ARGS line too
+                continue
+            if stripped.startswith("```"):
+                in_json_block = not in_json_block
+                continue
+            if in_json_block:
                 continue
             clean_lines.append(line)
         
