@@ -379,7 +379,7 @@ class TestToolSupport:
         
         text = provider._format_tools_as_text(tools)
         
-        assert "You have access to the following tools:" in text
+        assert "TOOLS AVAILABLE" in text
         assert "get_datetime" in text
         assert "search_web" in text
         assert "Get current date and time" in text
@@ -387,6 +387,8 @@ class TestToolSupport:
         assert "(required)" in text
         assert "TOOL:" in text
         assert "ARGS:" in text
+        assert "Example" in text  # Should have examples
+        assert "INSTRUCTIONS" in text  # Should have instructions
         print("✓ Tools formatted as text")
 
     def test_format_tools_empty(self):

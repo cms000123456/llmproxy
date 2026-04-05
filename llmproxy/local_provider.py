@@ -208,7 +208,17 @@ class LocalProvider:
         if not tools:
             return ""
         
-        lines = ["\n\nYou have access to the following tools:"]
+        lines = [
+            "\n\n=== TOOLS AVAILABLE ===",
+            "You have access to the following tools. When you need to use a tool,",
+            "you MUST respond ONLY with the tool call format shown below.",
+            "",
+            "TOOL CALL FORMAT:",
+            "TOOL: <tool_name>",
+            "ARGS: {<json_arguments>}",
+            "",
+            "Available tools:",
+        ]
         
         for i, tool in enumerate(tools, 1):
             func = tool.get("function", {})
@@ -217,7 +227,7 @@ class LocalProvider:
             params = func.get("parameters", {})
             
             lines.append(f"\n{i}. {name}")
-            lines.append(f"   Description: {desc}")
+            lines.append(f"   {desc}")
             
             if params.get("properties"):
                 lines.append("   Parameters:")
@@ -226,12 +236,35 @@ class LocalProvider:
                     param_desc = param_info.get("description", "")
                     required = param_name in params.get("required", [])
                     req_marker = " (required)" if required else ""
-                    lines.append(f"     - {param_name}: {param_type}{req_marker} - {param_desc}")
+                    lines.append(f"     - {param_name}: {param_type}{req_marker}")
+                    if param_desc:
+                        lines.append(f"       {param_desc}")
         
-        lines.append("\nTo use a tool, respond with:")
-        lines.append("TOOL: <tool_name>")
-        lines.append("ARGS: <json arguments>")
-        lines.append("\nIf you don't need a tool, respond normally.")
+        # Add examples
+        lines.extend([
+            "",
+            "=== EXAMPLES ===",
+            "",
+            "Example 1 - Using search_web:",
+            "User: What is the weather today?",
+            "Assistant:",
+            "TOOL: search_web",
+            'ARGS: {"query": "weather today"}',
+            "",
+            "Example 2 - Using get_datetime:",
+            "User: What time is it in Tokyo?",
+            "Assistant:",
+            "TOOL: get_datetime",
+            'ARGS: {"timezone_offset": "+09:00", "format": "readable"}',
+            "",
+            "=== INSTRUCTIONS ===",
+            "- If you need to use a tool, respond ONLY with the TOOL: and ARGS: lines",
+            "- Do NOT add any other text when calling a tool",
+            "- Use exact tool names as shown above",
+            "- ALL parameter values must be valid JSON strings",
+            "- If no tool is needed, respond normally with helpful text",
+            "=== END TOOLS ===",
+        ])
         
         return "\n".join(lines)
 
