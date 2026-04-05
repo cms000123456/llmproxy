@@ -325,36 +325,59 @@ class LocalProvider:
             
             i += 1
         
-        # If no TOOL: format found, try to extract from markdown code blocks
-        # Models sometimes put JSON in ```json blocks
+        # If no TOOL: format found, try to extract from JSON blocks
+        # Models sometimes put JSON in ```json blocks or directly in content
         if not tool_calls:
             import re
+            
+            # Try markdown code blocks first
             json_blocks = re.findall(r'```(?:json)?\s*(\{[^`]+\})\s*```', content, re.DOTALL)
+            
+            # Also try to find raw JSON objects in the content
+            # Look for patterns like {"query": "..."} or {"url": "..."}
+            if not json_blocks:
+                # Try to find JSON-like objects with specific keys
+                raw_json = re.findall(r'(\{[^{}]*"(?:query|url|code|command|path|timezone)[^}]*\})', content, re.DOTALL)
+                json_blocks.extend(raw_json)
+            
             for block in json_blocks:
                 try:
                     data = json.loads(block.strip())
-                    if isinstance(data, dict) and 'query' in data:
-                        # This looks like search_web args
-                        tool_calls.append({
-                            "id": f"call_{tool_call_id}",
-                            "type": "function", 
-                            "function": {
-                                "name": "search_web",
-                                "arguments": json.dumps(data),
-                            }
-                        })
-                        tool_call_id += 1
-                    elif isinstance(data, dict) and 'url' in data:
-                        # This looks like fetch_url args
-                        tool_calls.append({
-                            "id": f"call_{tool_call_id}",
-                            "type": "function",
-                            "function": {
-                                "name": "fetch_url",
-                                "arguments": json.dumps(data),
-                            }
-                        })
-                        tool_call_id += 1
+                    if isinstance(data, dict):
+                        tool_name = None
+                        
+                        # Detect tool type from keys
+                        if 'query' in data and 'url' not in data:
+                            tool_name = "search_web"
+                        elif 'url' in data and 'max_length' in data:
+                            tool_name = "fetch_url"
+                        elif 'url' in data and 'method' in data:
+                            tool_name = "http_request"
+                        elif 'code' in data:
+                            tool_name = "python"
+                        elif 'command' in data and 'args' in data:
+                            tool_name = "shell"
+                        elif 'path' in data and 'offset' in data:
+                            tool_name = "read_file"
+                        elif 'path' in data and 'content' in data:
+                            tool_name = "write_file"
+                        elif 'timezone_offset' in data or 'format' in data:
+                            tool_name = "get_datetime"
+                        elif 'source' in data and 'destination' in data:
+                            tool_name = "copy_file"
+                        elif 'pattern' in data:
+                            tool_name = "grep"
+                        
+                        if tool_name:
+                            tool_calls.append({
+                                "id": f"call_{tool_call_id}",
+                                "type": "function", 
+                                "function": {
+                                    "name": tool_name,
+                                    "arguments": json.dumps(data),
+                                }
+                            })
+                            tool_call_id += 1
                 except json.JSONDecodeError:
                     pass
         
