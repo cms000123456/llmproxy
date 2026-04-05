@@ -424,8 +424,15 @@ async def search_web(query: str, limit: int = 5) -> str:
         url = f"https://lite.duckduckgo.com/lite/?q={encoded_query}"
         
         async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            # More realistic browser headers
             headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
             }
             resp = await client.get(url, headers=headers)
             resp.raise_for_status()
@@ -525,9 +532,11 @@ async def search_web(query: str, limit: int = 5) -> str:
             
             # Format results
             if not results:
-                return "No search results found. The search service may be temporarily unavailable."
+                # Debug info - return a snippet of HTML to help diagnose
+                html_preview = html[:500].replace('\n', ' ')
+                return f"No search results found for '{query}'. The search service may be temporarily unavailable or the query returned no results."
             
-            lines = [f"Web search results for: '{query}'\n"]
+            lines = [f"Web search results for: '{query}' ({len(results)} results)\n"]
             for i, r in enumerate(results, 1):
                 lines.append(f"{i}. {r['title']}")
                 lines.append(f"   URL: {r['url']}")
@@ -537,8 +546,12 @@ async def search_web(query: str, limit: int = 5) -> str:
             
             return "\n".join(lines)
             
+    except httpx.TimeoutException:
+        return f"Error: Search request timed out for query '{query}'"
+    except httpx.HTTPStatusError as e:
+        return f"Error: Search returned HTTP {e.response.status_code}"
     except Exception as exc:
-        return f"Error searching web: {exc}"
+        return f"Error searching web for '{query}': {exc}"
 
 
 async def fetch_url(url: str, max_length: int = 5000) -> str:
