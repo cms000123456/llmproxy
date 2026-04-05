@@ -5,6 +5,8 @@ import atexit
 import os
 import sys
 import termios
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -998,8 +1000,26 @@ def run(
                     continue
     
             try:
-                with console.status("[bold green]Thinking...[/bold green]"):
+                # Show status with potential wait indicator for backoff
+                start_time = time.time()
+                with console.status("[bold green]Thinking...[/bold green]") as status:
+                    # Create a thread to update status if request takes long (indicating backoff)
+                    def update_status():
+                        sleep_time = 3  # First update after 3 seconds
+                        time.sleep(sleep_time)
+                        elapsed = sleep_time
+                        while elapsed < 60:  # Max 60 seconds of updates
+                            status.update(f"[bold yellow]Waiting (rate limit backoff) {elapsed}s...[/bold yellow]")
+                            time.sleep(2)
+                            elapsed += 2
+                    
+                    status_thread = threading.Thread(target=update_status, daemon=True)
+                    status_thread.start()
+                    
                     reply = agent.chat(user_input)
+                    elapsed = time.time() - start_time
+                    if elapsed > 3:
+                        console.print(f"[dim](Request took {elapsed:.1f}s, may include backoff)[/dim]")
     
                 console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
                 console.print()  # Extra newline for spacing
