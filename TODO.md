@@ -62,6 +62,18 @@
   - **Time Estimate:** 1 day
   - **Note:** Completed 2026-04-04
 
+- [x] ~~**TODO-NEW:**~~ Automatic GPU-based model download
+  - **File:** `llmproxy/gpu_detector.py`, `llmproxy/model_manager.py`
+  - **Features:**
+    - Auto-detect GPU (NVIDIA/AMD/Apple)
+    - Calculate VRAM requirements for models
+    - Auto-download recommended models on startup
+    - API endpoints for GPU info and model management
+  - **Config:** `auto_download_models: bool`, `auto_download_best_only: bool`
+  - **Endpoints:** `/system/gpu`, `/models/download`, `/models/auto-download`
+  - **Time Estimate:** 4 hours
+  - **Note:** Completed 2026-04-05
+
 - [x] ~~**TODO-006:**~~ Convert file I/O to async (aiofiles)
   - **File:** `llmproxy/tools.py`
   - **Functions:** `read_file()`, `write_file()`, `grep()`

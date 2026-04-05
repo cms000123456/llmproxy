@@ -4,6 +4,26 @@ Run LLM Proxy entirely offline using local models via [Ollama](https://ollama.co
 
 ## Quick Start
 
+### Option 1: Automatic (Recommended)
+
+```bash
+# 1. Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 2. Configure local mode with auto-download
+cat > .env << 'EOF'
+LLM_PROXY_LOCAL_MODE=true
+LLM_PROXY_AUTO_DOWNLOAD_MODELS=true
+LLM_PROXY_AUTO_DOWNLOAD_BEST_ONLY=true
+LLM_PROXY_AUTH_ENABLED=false
+EOF
+
+# 3. Start proxy - it will auto-detect GPU and download suitable models
+./llmproxy.sh proxy
+```
+
+### Option 2: Manual Setup
+
 ```bash
 # 1. Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
@@ -71,6 +91,47 @@ Use convenient aliases instead of full model names:
 - 64GB+ RAM
 - 100+ tokens/sec
 
+## Automatic Model Management
+
+The proxy can automatically detect your GPU and download suitable models.
+
+### Auto-Download on Startup
+
+```bash
+# Enable automatic model download
+LLM_PROXY_LOCAL_MODE=true
+LLM_PROXY_AUTO_DOWNLOAD_MODELS=true
+LLM_PROXY_AUTO_DOWNLOAD_BEST_ONLY=true  # Only best model (vs top 3)
+```
+
+When enabled, on startup the proxy will:
+1. Detect your GPU and available VRAM
+2. Calculate which models fit
+3. Download the best model(s) automatically
+
+### API Endpoints
+
+```bash
+# Get GPU info and recommendations
+curl http://localhost:8080/system/gpu
+
+# Auto-download recommended models
+curl -X POST http://localhost:8080/models/auto-download
+
+# Download specific model
+curl -X POST http://localhost:8080/models/download \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen2.5-coder:14b"}'
+```
+
+### GPU Detection
+
+Supported platforms:
+- **NVIDIA**: Uses `nvidia-smi` to detect VRAM
+- **AMD**: Uses `rocm-smi` (limited support)
+- **Apple Silicon**: Uses `sysctl` for unified memory
+- **CPU**: Falls back with conservative estimates
+
 ## Configuration
 
 ### Environment Variables
@@ -81,6 +142,10 @@ LLM_PROXY_LOCAL_MODE=true
 
 # Default model for requests without explicit model
 LLM_PROXY_LOCAL_MODEL=qwen2.5-coder:14b
+
+# Automatic model management
+LLM_PROXY_AUTO_DOWNLOAD_MODELS=false      # Auto-download on startup
+LLM_PROXY_AUTO_DOWNLOAD_BEST_ONLY=true    # Only best model (vs top 3)
 
 # Ollama server URL (default: http://localhost:11434)
 LLM_PROXY_OLLAMA_BASE_URL=http://localhost:11434
