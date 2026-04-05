@@ -230,6 +230,22 @@ PRICING = {
     "gpt-4": {"input": 30.00, "output": 60.00},
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+    # Local models - essentially free (just electricity cost, negligible)
+    "qwen2.5-coder:14b": {"input": 0.0, "output": 0.0, "local": True},
+    "qwen2.5-coder:7b": {"input": 0.0, "output": 0.0, "local": True},
+    "qwen2.5-coder:32b": {"input": 0.0, "output": 0.0, "local": True},
+    "llama3.3:latest": {"input": 0.0, "output": 0.0, "local": True},
+    "llama3.2:3b": {"input": 0.0, "output": 0.0, "local": True},
+    "deepseek-coder:6.7b": {"input": 0.0, "output": 0.0, "local": True},
+    "deepseek-coder:33b": {"input": 0.0, "output": 0.0, "local": True},
+    "codellama:7b": {"input": 0.0, "output": 0.0, "local": True},
+    "codellama:13b": {"input": 0.0, "output": 0.0, "local": True},
+    "codellama:34b": {"input": 0.0, "output": 0.0, "local": True},
+    "phi3:mini": {"input": 0.0, "output": 0.0, "local": True},
+    "phi3:medium": {"input": 0.0, "output": 0.0, "local": True},
+    "gemma4:4b": {"input": 0.0, "output": 0.0, "local": True},
+    "gemma4:12b": {"input": 0.0, "output": 0.0, "local": True},
+    "gemma4:27b": {"input": 0.0, "output": 0.0, "local": True},
     "default": {"input": 0.50, "output": 2.00},
 }
 
@@ -497,6 +513,33 @@ class Agent:
 
         summary = " | ".join(parts) if parts else "No savings yet"
         return f"[dim green]Proxy saved: {summary} (~${saved_cost:.2f})[/dim green]"
+
+    def get_local_savings(self) -> str:
+        """Get savings from using local models vs cloud API.
+        
+        Compares current usage cost vs what it would cost on kimi-for-coding (cloud).
+        """
+        total = self.usage.get("total_tokens", 0)
+        if total == 0:
+            return ""
+        
+        # Check if current model is local
+        pricing = PRICING.get(self.model, PRICING["default"])
+        if not pricing.get("local", False):
+            return ""  # Not a local model, no local savings
+        
+        # Calculate what this would have cost on cloud (kimi-for-coding)
+        cloud_pricing = PRICING["kimi-for-coding"]
+        inp = self.usage.get("input_tokens", 0)
+        out = self.usage.get("output_tokens", 0)
+        
+        cloud_cost = (inp / 1_000_000) * cloud_pricing["input"] + \
+                     (out / 1_000_000) * cloud_pricing["output"]
+        
+        if cloud_cost < 0.001:
+            return ""
+        
+        return f"[dim cyan]💰 Local saved: ~${cloud_cost:.2f} vs cloud[/dim cyan]"
 
     def _print_tool_call(self, name: str, args: dict) -> None:
         """Pretty-print a tool call with context about what it's doing."""

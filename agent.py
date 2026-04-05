@@ -133,6 +133,12 @@ def _format_status_footer(agent, gpu_info: Optional[dict] = None, confirm_status
         savings_clean = savings.replace("[dim]", "").replace("[/dim]", "").replace("Proxy: ", "")
         parts.append(f"[green]{savings_clean}[/green]")
     
+    # Local model savings (if using local model)
+    local_savings = agent.get_local_savings()
+    if local_savings:
+        local_savings_clean = local_savings.replace("[dim]", "").replace("[/dim]", "").replace("💰 ", "")
+        parts.append(f"[cyan]{local_savings_clean}[/cyan]")
+    
     # GPU info
     if gpu_info:
         free_vram = gpu_info.get("free_vram_gb", 0)
