@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Entry point for the coding agent CLI."""
 
+import atexit
 import os
+import sys
+import termios
 from typing import Optional
 
 import openai
@@ -10,7 +13,8 @@ from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
-from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.formatted_text import HTML, merge_formatted_text
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.application import get_app
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.shortcuts import CompleteStyle
@@ -21,6 +25,40 @@ from rich.table import Table
 from rich.tree import Tree
 
 from llmproxy.cli_agent import Agent, _get_project_id, _init_agent_md, _list_sessions
+
+
+# Terminal state management for cleanup on exit
+_original_terminal_attrs = None
+
+
+def _save_terminal_state():
+    """Save current terminal state for later restoration."""
+    global _original_terminal_attrs
+    try:
+        if sys.stdin.isatty():
+            _original_terminal_attrs = termios.tcgetattr(sys.stdin.fileno())
+    except Exception:
+        pass
+
+
+def _restore_terminal():
+    """Restore terminal to original state."""
+    global _original_terminal_attrs
+    try:
+        if _original_terminal_attrs and sys.stdin.isatty():
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, _original_terminal_attrs)
+    except Exception:
+        pass
+    # Fallback: reset common terminal settings
+    try:
+        os.system('stty sane 2>/dev/null')
+    except Exception:
+        pass
+
+
+# Register cleanup on exit
+atexit.register(_restore_terminal)
+
 
 app = typer.Typer(help="Coding agent CLI — interacts with your filesystem via LLM tools.")
 console = Console()
@@ -64,6 +102,17 @@ COMPLETION_STYLE = Style.from_dict({
     'completion-menu.completion.current': 'bg:#005f87 #ffffff bold',
     'completion-menu.meta.completion': 'bg:#2b2b2b #a0a0a0',
     'completion-menu.meta.completion.current': 'bg:#005f87 #c0c0c0',
+    # Toolbar styles
+    'toolbar': 'bg:#1a1a1a #e0e0e0',
+    'toolbar.model': 'bg:#1a1a1a #5fd7ff bold',
+    'toolbar.tokens': 'bg:#1a1a1a #e0e0e0',
+    'toolbar.cost': 'bg:#1a1a1a #ffd700',
+    'toolbar.savings': 'bg:#1a1a1a #5fd75f',
+    'toolbar.local': 'bg:#1a1a1a #5fd7ff',
+    'toolbar.gpu': 'bg:#1a1a1a #a0a0a0',
+    'toolbar.confirm-on': 'bg:#1a1a1a #5fd75f',
+    'toolbar.confirm-off': 'bg:#1a1a1a #d7af5f',
+    'toolbar.separator': 'bg:#1a1a1a #666666',
 })
 
 
@@ -101,6 +150,91 @@ class SlashCommandCompleter(Completer):
 
 def _get_env(var: str, default: str = "") -> str:
     return os.getenv(var, default)
+
+
+def _format_bottom_toolbar(agent, gpu_info: Optional[dict] = None, confirm_status: str = ""):
+    """Format a persistent bottom toolbar for prompt_toolkit.
+    
+    Returns HTML-formatted text showing:
+    - Model name
+    - Token usage  
+    - Estimated cost
+    - Cache/proxy savings
+    - Local savings
+    - GPU info
+    - Confirm status
+    """
+    parts = []
+    
+    # Model (truncated if needed)
+    model = agent.model
+    if len(model) > 25:
+        model = model[:23] + ".."
+    parts.append(("class:toolbar.model", f" {model} "))
+    parts.append(("class:toolbar.separator", "│"))
+    
+    # Token usage
+    total = agent.usage.get("total_tokens", 0)
+    inp = agent.usage.get("input_tokens", 0)
+    out = agent.usage.get("output_tokens", 0)
+    parts.append(("class:toolbar.tokens", f" Tokens: {total:,} (↑{inp:,} ↓{out:,}) "))
+    parts.append(("class:toolbar.separator", "│"))
+    
+    # Estimated cost
+    from llmproxy.cli_agent import PRICING
+    pricing = PRICING.get(agent.model, PRICING["default"])
+    input_cost = (inp / 1_000_000) * pricing["input"]
+    output_cost = (out / 1_000_000) * pricing["output"]
+    total_cost = input_cost + output_cost
+    cost_str = f"~${total_cost:.2f}" if total_cost >= 0.01 else f"~${total_cost:.3f}"
+    parts.append(("class:toolbar.cost", f" Cost: {cost_str} "))
+    parts.append(("class:toolbar.separator", "│"))
+    
+    # Proxy savings
+    from llmproxy.cli_agent import _fetch_proxy_savings
+    savings = _fetch_proxy_savings(agent.base_url)
+    if savings:
+        saved = savings.get("tokens_saved", 0)
+        cache_hits = savings.get("cache_hits", 0)
+        cache_rate = savings.get("cache_hit_rate", 0)
+        
+        saved_cost = (saved / 1_000_000) * pricing["input"]
+        savings_parts = []
+        if saved > 0:
+            savings_parts.append(f"{saved:,} filtered")
+        if cache_hits > 0:
+            savings_parts.append(f"{cache_hits} cached")
+        if cache_rate > 0:
+            savings_parts.append(f"{cache_rate:.0%} hit")
+        
+        if savings_parts:
+            summary = " | ".join(savings_parts)
+            parts.append(("class:toolbar.savings", f" Proxy: {summary} (~${saved_cost:.2f}) "))
+            parts.append(("class:toolbar.separator", "│"))
+    
+    # Local model savings (if using local model)
+    if pricing.get("local", False) and total > 0:
+        cloud_pricing = PRICING["kimi-for-coding"]
+        cloud_cost = (inp / 1_000_000) * cloud_pricing["input"] + (out / 1_000_000) * cloud_pricing["output"]
+        if cloud_cost >= 0.01:
+            parts.append(("class:toolbar.local", f" Local saved: ~${cloud_cost:.2f} "))
+            parts.append(("class:toolbar.separator", "│"))
+    
+    # GPU info
+    if gpu_info:
+        free_vram = gpu_info.get("free_vram_gb", 0)
+        if free_vram > 0:
+            parts.append(("class:toolbar.gpu", f" VRAM: {free_vram:.1f}G "))
+            parts.append(("class:toolbar.separator", "│"))
+    
+    # Confirm status
+    if confirm_status:
+        if "ON" in confirm_status:
+            parts.append(("class:toolbar.confirm-on", " ✓ Confirm "))
+        else:
+            parts.append(("class:toolbar.confirm-off", " ⚡ Auto "))
+    
+    return FormattedText(parts)
 
 
 def _format_status_footer(agent, gpu_info: Optional[dict] = None, confirm_status: str = "") -> str:
@@ -173,6 +307,24 @@ def _fetch_models(base_url: str, api_key: str = "") -> list[dict]:
     except Exception:
         pass
     return []
+
+
+def _format_progress_bar(used: int, limit: int, width: int = 25) -> str:
+    """Format a progress bar showing usage."""
+    if not limit:
+        return "━" * width
+    
+    ratio = min(used / limit, 1.0) if limit > 0 else 0
+    filled = int(width * ratio)
+    empty = width - filled
+    
+    # Build the bar
+    if empty > 0:
+        bar = "━" * filled + "╺" + "━" * (empty - 1)
+    else:
+        bar = "━" * width
+    
+    return bar
 
 
 def _fetch_gpu_info(base_url: str, api_key: str = "") -> Optional[dict]:
@@ -463,6 +615,9 @@ def run(
     ),
     prompt: str = typer.Argument("", help="Single prompt to run non-interactively"),
 ):
+    # Save terminal state for cleanup on exit
+    _save_terminal_state()
+    
     # Handle list sessions
     if list_sessions:
         project_id = _get_project_id()
@@ -591,188 +746,259 @@ def run(
     # Pre-fetch GPU info for status bar
     gpu_info = _fetch_gpu_info(base_url, api_key)
 
-    while True:
-        # Show status footer before each prompt
-        footer = _format_status_footer(agent, gpu_info, get_confirm_status())
-        console.print(f"[dim]╭─ {footer}[/dim]")
-        
-        try:
-            # Use prompt_toolkit for better UX (autocompletion, etc.)
-            user_input = pt_prompt(
-                "> ",
-                completer=SlashCommandCompleter(),
-                complete_while_typing=True,
-                complete_style=CompleteStyle.MULTI_COLUMN,
-                key_bindings=bindings,
-                enable_history_search=True,
-                style=COMPLETION_STYLE,
-                # Show completion menu on tab even when text is empty
-                reserve_space_for_menu=8,
-            )
-        except (EOFError, KeyboardInterrupt):
-            console.print("\n[dim]Session saved. Goodbye.[/dim]")
-            break
-
-        user_input = user_input.strip()
-
-        # Handle /commands
-        if user_input.lower() in ("/exit", "/quit", "/q"):
-            console.print("[dim]Session saved. Goodbye.[/dim]")
-            break
-        
-        elif user_input.lower() in ("/help", "/h", "?"):
-            _show_help_panel(get_confirm_status)
-            continue
-        
-        elif user_input.lower() == "/clear":
-            console.clear()
-            console.print(
-                Panel.fit(
-                    f"[bold green]Coding Agent[/bold green]\n"
-                    f"[dim]Model:[/dim] [cyan]{agent.model}[/cyan]\n"
-                    f"{get_confirm_status()}",
-                    title="Screen Cleared",
-                )
-            )
-            continue
-        
-        elif user_input.lower() in ("/models", "/model"):
-            # Fetch models if not cached
-            if cached_models is None:
-                console.print("[dim]Fetching available models...[/dim]")
-                cached_models = _fetch_models(base_url, api_key)
-                gpu_info = _fetch_gpu_info(base_url, api_key)
-            
-            switched = _switch_model_interactive(
-                cached_models, agent.model, gpu_info, agent
-            )
-            
-            if switched:
-                # Refresh usage display after model switch
-                console.print(f"\n[dim]Ready to use {agent.model}[/dim]")
-            continue
-        
-        elif user_input.lower().startswith("/model ") or user_input.lower().startswith("/m "):
-            # Quick model switch by name
-            parts = user_input.split(maxsplit=1)
-            if len(parts) > 1:
-                model_name = parts[1].strip()
-                agent.model = model_name
-                console.print(f"[bold green]✓[/bold green] Switched to: [cyan]{model_name}[/cyan]")
-                
-                # Show info
-                gpu_info = _fetch_gpu_info(base_url, api_key)
-                info = _format_model_info(model_name, gpu_info)
-                console.print(Panel(info, border_style="dim", padding=(0, 2)))
-            else:
-                console.print("[red]Usage: /model <model-name>[/red]")
-            continue
-        
-        elif user_input.lower() in ("/model-info", "/info", "/i"):
-            # Show current model info
-            gpu_info = _fetch_gpu_info(base_url, api_key)
-            info = _format_model_info(agent.model, gpu_info)
-            
-            console.print(Panel(
-                f"[bold]Current Model:[/bold] [cyan]{agent.model}[/cyan]\n\n{info}",
-                title="Model Info",
-                border_style="blue"
-            ))
-            continue
-        
-        elif user_input.lower() == "/usage":
-            console.print(agent.get_usage_summary())
-            continue
-        
-        elif user_input.lower() == "/savings":
-            console.print(agent.get_proxy_savings())
-            continue
-        
-        elif user_input.lower() == "/confirm":
-            confirm_state[0] = True
-            console.print(
-                "[dim green]✓[/dim green] Confirmation enabled. The agent will ask before executing tasks."
-            )
-            continue
-        
-        elif user_input.lower() == "/noconfirm":
-            confirm_state[0] = False
-            console.print(
-                "[dim yellow]⚡[/dim yellow] Confirmation disabled. The agent will auto-execute tasks."
-            )
-            continue
-        
-        elif user_input.lower() == "/init":
-            if _init_agent_md():
-                console.print(
-                    "[dim green]✓[/dim green] Created AGENT.md with default project context."
-                )
-                console.print(
-                    "[dim]Edit this file to customize project-specific instructions.[/dim]"
-                )
-            else:
-                console.print(
-                    "[dim yellow]⚠[/dim yellow] AGENT.md already exists. Edit it directly to customize."
-                )
-            continue
-        
-        elif not user_input:
-            continue
-        
-        elif user_input.startswith("/"):
-            console.print(
-                f"[dim]Unknown command: {user_input}. Type /help for available commands.[/dim]"
-            )
-            continue
-
-        # Confirmation flow: agent states its understanding first
-        if confirm_state[0]:
+    try:
+        while True:
             try:
-                with console.status("[bold blue]Understanding your request...[/bold blue]"):
-                    understanding = agent.get_understanding(user_input)
+                # Use prompt_toolkit for better UX (autocompletion, etc.)
+                # Bottom toolbar shows persistent status footer
+                user_input = pt_prompt(
+                    "> ",
+                    completer=SlashCommandCompleter(),
+                    complete_while_typing=True,
+                    complete_style=CompleteStyle.MULTI_COLUMN,
+                    key_bindings=bindings,
+                    enable_history_search=True,
+                    style=COMPLETION_STYLE,
+                    bottom_toolbar=lambda: _format_bottom_toolbar(agent, gpu_info, get_confirm_status()),
+                    # Show completion menu on tab even when text is empty
+                    reserve_space_for_menu=8,
+                )
+            except (EOFError, KeyboardInterrupt):
+                console.print("\n[dim]Session saved. Goodbye.[/dim]")
+                break
+    
+            user_input = user_input.strip()
+    
+            # Handle /commands
+            if user_input.lower() in ("/exit", "/quit", "/q"):
+                console.print("[dim]Session saved. Goodbye.[/dim]")
+                break
+            
+            elif user_input.lower() in ("/help", "/h", "?"):
+                _show_help_panel(get_confirm_status)
+                continue
+            
+            elif user_input.lower() == "/clear":
+                console.clear()
+                console.print(
+                    Panel.fit(
+                        f"[bold green]Coding Agent[/bold green]\n"
+                        f"[dim]Model:[/dim] [cyan]{agent.model}[/cyan]\n"
+                        f"{get_confirm_status()}",
+                        title="Screen Cleared",
+                    )
+                )
+                continue
+            
+            elif user_input.lower() in ("/models", "/model"):
+                # Fetch models if not cached
+                if cached_models is None:
+                    console.print("[dim]Fetching available models...[/dim]")
+                    cached_models = _fetch_models(base_url, api_key)
+                    gpu_info = _fetch_gpu_info(base_url, api_key)
+                
+                switched = _switch_model_interactive(
+                    cached_models, agent.model, gpu_info, agent
+                )
+                
+                if switched:
+                    # Refresh usage display after model switch
+                    console.print(f"\n[dim]Ready to use {agent.model}[/dim]")
+                continue
+            
+            elif user_input.lower().startswith("/model ") or user_input.lower().startswith("/m "):
+                # Quick model switch by name
+                parts = user_input.split(maxsplit=1)
+                if len(parts) > 1:
+                    model_name = parts[1].strip()
+                    agent.model = model_name
+                    console.print(f"[bold green]✓[/bold green] Switched to: [cyan]{model_name}[/cyan]")
+                    
+                    # Show info
+                    gpu_info = _fetch_gpu_info(base_url, api_key)
+                    info = _format_model_info(model_name, gpu_info)
+                    console.print(Panel(info, border_style="dim", padding=(0, 2)))
+                else:
+                    console.print("[red]Usage: /model <model-name>[/red]")
+                continue
+            
+            elif user_input.lower() in ("/model-info", "/info", "/i"):
+                # Show current model info
+                gpu_info = _fetch_gpu_info(base_url, api_key)
+                info = _format_model_info(agent.model, gpu_info)
                 
                 console.print(Panel(
-                    Markdown(understanding),
-                    title="[bold yellow]My Understanding[/bold yellow]",
-                    border_style="yellow",
-                    subtitle="[dim]Press Enter to proceed, Ctrl+C to cancel[/dim]"
+                    f"[bold]Current Model:[/bold] [cyan]{agent.model}[/cyan]\n\n{info}",
+                    title="Model Info",
+                    border_style="blue"
                 ))
+                continue
+            
+            elif user_input.lower() == "/usage":
+                # Build rich usage panel
+                total = agent.usage.get("total_tokens", 0)
+                inp = agent.usage.get("input_tokens", 0)
+                out = agent.usage.get("output_tokens", 0)
                 
-                # Wait for user confirmation
+                # Get pricing and calculate cost
+                from llmproxy.cli_agent import PRICING
+                pricing = PRICING.get(agent.model, PRICING["default"])
+                input_cost = (inp / 1_000_000) * pricing["input"]
+                output_cost = (out / 1_000_000) * pricing["output"]
+                total_cost = input_cost + output_cost
+                cost_str = f"${total_cost:.2f}" if total_cost >= 0.01 else f"${total_cost:.3f}"
+                
+                lines = []
+                lines.append(f"[bold cyan]Session Usage[/bold cyan]  (Model: [cyan]{agent.model}[/cyan])")
+                lines.append("")
+                lines.append(f"  Total Tokens:  [bold white]{total:,}[/bold white]  ([green]↑{inp:,}[/green] input  [magenta]↓{out:,}[/magenta] output)")
+                lines.append(f"  Est. Cost:     [yellow]{cost_str}[/yellow]")
+                lines.append("")
+                
+                # Add proxy savings
+                from llmproxy.cli_agent import _fetch_proxy_savings
+                savings = _fetch_proxy_savings(agent.base_url)
+                if savings:
+                    upstream = savings.get("upstream_tokens", 0)
+                    downstream = savings.get("downstream_tokens", 0)
+                    saved = savings.get("tokens_saved", 0)
+                    cache_hits = savings.get("cache_hits", 0)
+                    cache_rate = savings.get("cache_hit_rate", 0)
+                    requests = savings.get("requests_total", 0)
+                    
+                    lines.append("[bold cyan]Proxy Activity[/bold cyan]")
+                    lines.append("")
+                    lines.append(f"  Requests:        [white]{requests:,}[/white]")
+                    lines.append(f"  Upstream:        [dim]{upstream:,} tokens[/dim]")
+                    lines.append(f"  Downstream:      [dim]{downstream:,} tokens[/dim]")
+                    if saved > 0:
+                        lines.append(f"  Filtered:        [green]{saved:,} tokens[/green]")
+                    if cache_hits > 0:
+                        lines.append(f"  Cache hits:      [green]{cache_hits:,}[/green]")
+                    if cache_rate > 0:
+                        lines.append(f"  Cache hit rate:  [green]{cache_rate:.1%}[/green]")
+                    
+                    # Calculate money saved through proxy
+                    saved_cost = (saved / 1_000_000) * pricing["input"]
+                    if saved_cost >= 0.001:
+                        lines.append(f"  Money saved:     [green]~${saved_cost:.3f}[/green]")
+                    lines.append("")
+                
+                # Local model info
+                if pricing.get("local", False):
+                    lines.append("[bold cyan]Local Model Savings[/bold cyan]")
+                    lines.append("")
+                    cloud_pricing = PRICING["kimi-for-coding"]
+                    cloud_cost = (inp / 1_000_000) * cloud_pricing["input"] + (out / 1_000_000) * cloud_pricing["output"]
+                    if cloud_cost >= 0.001:
+                        lines.append(f"  vs Cloud API:    [cyan]~${cloud_cost:.3f} saved[/cyan]")
+                    lines.append("")
+                
+                console.print(Panel("\n".join(lines), title="[bold]Usage Statistics[/bold]", border_style="blue", padding=(0, 2), width=60))
+                continue
+            
+            elif user_input.lower() == "/savings":
+                console.print(agent.get_proxy_savings())
+                continue
+            
+            elif user_input.lower() == "/confirm":
+                confirm_state[0] = True
+                console.print(
+                    "[dim green]✓[/dim green] Confirmation enabled. The agent will ask before executing tasks."
+                )
+                continue
+            
+            elif user_input.lower() == "/noconfirm":
+                confirm_state[0] = False
+                console.print(
+                    "[dim yellow]⚡[/dim yellow] Confirmation disabled. The agent will auto-execute tasks."
+                )
+                continue
+            
+            elif user_input.lower() == "/init":
+                if _init_agent_md():
+                    console.print(
+                        "[dim green]✓[/dim green] Created AGENT.md with default project context."
+                    )
+                    console.print(
+                        "[dim]Edit this file to customize project-specific instructions.[/dim]"
+                    )
+                else:
+                    console.print(
+                        "[dim yellow]⚠[/dim yellow] AGENT.md already exists. Edit it directly to customize."
+                    )
+                continue
+            
+            elif not user_input:
+                continue
+            
+            elif user_input.startswith("/"):
+                console.print(
+                    f"[dim]Unknown command: {user_input}. Type /help for available commands.[/dim]"
+                )
+                continue
+    
+            # Confirmation flow: agent states its understanding first
+            if confirm_state[0]:
                 try:
-                    confirm_input = pt_prompt("[Press Enter to proceed, or type to refine] > ")
-                except (EOFError, KeyboardInterrupt):
+                    with console.status("[bold blue]Understanding your request...[/bold blue]"):
+                        understanding = agent.get_understanding(user_input)
+                    
+                    console.print(Panel(
+                        Markdown(understanding),
+                        title="[bold yellow]My Understanding[/bold yellow]",
+                        border_style="yellow",
+                        subtitle="[dim]Press Enter to proceed, Ctrl+C to cancel[/dim]"
+                    ))
+                    
+                    # Wait for user confirmation
+                    try:
+                        confirm_input = pt_prompt("[Press Enter to proceed, or type to refine] > ")
+                    except (EOFError, KeyboardInterrupt):
+                        console.print("\n[dim yellow]⏹ Cancelled.[/dim yellow]")
+                        continue
+                    
+                    # If user typed something, treat it as clarification/refinement
+                    if confirm_input.strip():
+                        user_input = f"{user_input}\n\n[Clarification: {confirm_input.strip()}]"
+                        console.print("[dim]Proceeding with your clarification...[/dim]")
+                    else:
+                        console.print("[dim]Proceeding...[/dim]")
+                        
+                except KeyboardInterrupt:
                     console.print("\n[dim yellow]⏹ Cancelled.[/dim yellow]")
                     continue
-                
-                # If user typed something, treat it as clarification/refinement
-                if confirm_input.strip():
-                    user_input = f"{user_input}\n\n[Clarification: {confirm_input.strip()}]"
-                    console.print("[dim]Proceeding with your clarification...[/dim]")
-                else:
-                    console.print("[dim]Proceeding...[/dim]")
-                    
+    
+            try:
+                with console.status("[bold green]Thinking...[/bold green]"):
+                    reply = agent.chat(user_input)
+    
+                console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
+                console.print()  # Extra newline for spacing
+            except openai.RateLimitError as e:
+                # Handle rate limit errors with helpful suggestions
+                error_body = e.body if hasattr(e, 'body') else {}
+                error_msg = str(e)
+                console.print(Panel(
+                    "[bold red]⏱️ Rate Limit Exceeded[/bold red]\n\n"
+                    "The upstream API is rate-limiting requests. Options:\n\n"
+                    "1. [cyan]/models[/cyan] - Switch to a different model\n"
+                    "2. [cyan]/model <local-model>[/cyan] - Use a local Ollama model (no rate limits)\n"
+                    "3. Wait a moment and try again\n\n"
+                    f"[dim]Error: {error_msg[:100]}...[/dim]" if len(str(error_msg)) > 100 else f"[dim]Error: {error_msg}[/dim]",
+                    title="Rate Limited",
+                    border_style="red"
+                ))
+            except openai.APIError as e:
+                console.print(f"\n[dim red]API Error ({e.__class__.__name__}): {e}[/dim red]")
             except KeyboardInterrupt:
-                console.print("\n[dim yellow]⏹ Cancelled.[/dim yellow]")
-                continue
-
-        try:
-            with console.status("[bold green]Thinking...[/bold green]"):
-                reply = agent.chat(user_input)
-
-            console.print(Panel(Markdown(reply), title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
-            
-            # Show updated status footer after response
-            footer = _format_status_footer(agent, gpu_info, get_confirm_status())
-            console.print(f"[dim]╰─ {footer}[/dim]")
-            console.print()  # Extra newline for spacing
-        except openai.APIError as e:
-            console.print(f"\n[dim red]API Error ({e.__class__.__name__}): {e}[/dim red]")
-        except KeyboardInterrupt:
-            console.print("\n[dim yellow]⏹ Chat interrupted.[/dim yellow]")
-            # Add a placeholder message so the conversation context is preserved
-            agent.messages.append({"role": "assistant", "content": "[Response interrupted by user]"})
-            agent._save()
+                console.print("\n[dim yellow]⏹ Chat interrupted.[/dim yellow]")
+                # Add a placeholder message so the conversation context is preserved
+                agent.messages.append({"role": "assistant", "content": "[Response interrupted by user]"})
+                agent._save()
+    finally:
+        # Restore terminal state on exit
+        _restore_terminal()
 
 
 if __name__ == "__main__":

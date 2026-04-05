@@ -165,7 +165,7 @@ Guidelines:
 - **SUMMARIZE CHANGES**: When writing code, don't dump large blocks. Instead, explain what changed and why, showing only the key parts.
 - Prefer reading files before editing them.
 - When writing code, produce complete, working files.
-- Keep shell commands safe and relevant.
+- Keep shell commands safe and relevant - **NEVER use sudo**.
 - If a task spans multiple steps, use tools iteratively and confirm each step.
 - Always summarize what you did in your final response.
 - When creating reports or documentation, use the get_datetime tool to get the current date.
@@ -252,11 +252,12 @@ PRICING = {
 
 def _get_project_id() -> str:
     """Generate a unique ID for the current project/workspace."""
+    import hashlib
     cwd = os.getcwd()
-    # Use the directory name + full path hash for uniqueness
+    # Use the directory name + deterministic hash of full path
     dir_name = os.path.basename(cwd)
-    path_hash = hash(cwd) & 0xFFFFFFFF
-    return f"{dir_name}_{path_hash:08x}"
+    path_hash = hashlib.md5(cwd.encode()).hexdigest()[:8]
+    return f"{dir_name}_{path_hash}"
 
 
 def _get_conversation_path(project_id: str, session_id: str) -> Path:
@@ -359,6 +360,9 @@ class Agent:
         # Session management
         self.project_id = _get_project_id()
         self.session_id = session_id or self._generate_session_id()
+        
+        # API limits tracking (from upstream responses)
+        self.api_limits: dict[str, Any] = {}
 
         # Load or initialize conversation
         if resume:
@@ -472,6 +476,87 @@ class Agent:
             self.usage["input_tokens"] += usage.prompt_tokens or 0
             self.usage["output_tokens"] += usage.completion_tokens or 0
             self.usage["total_tokens"] += usage.total_tokens or 0
+    
+    def _fetch_api_limits(self) -> dict:
+        """Fetch API usage limits from upstream provider (Kimi/Moonshot)."""
+        try:
+            import httpx
+            
+            # Extract API key from client
+            api_key = self.client.api_key
+            headers = {}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            
+            # Try Kimi/Moonshot usage endpoint
+            # The proxy forwards to kimi.moonshot.cn or api.moonshot.cn
+            # We need to check the actual upstream API
+            base = self.base_url.rstrip("/")
+            
+            # Moonshot API uses api.moonshot.cn/v1
+            # Try both the proxy path and direct upstream
+            endpoints = []
+            
+            # If using proxy, try the proxy's upstream
+            if "localhost" in base or ":8080" in base:
+                # Try through proxy first
+                endpoints.extend([
+                    f"{base}/users/me/usage",
+                    f"{base}/usage",
+                ])
+                # Then try direct to Moonshot API
+                endpoints.extend([
+                    "https://api.moonshot.cn/v1/users/me/usage",
+                    "https://kimi.moonshot.cn/v1/users/me/usage",
+                ])
+            else:
+                # Direct API connection
+                endpoints = [
+                    f"{base}/users/me/usage",
+                    f"{base}/usage",
+                ]
+            
+            for url in endpoints:
+                try:
+                    resp = httpx.get(url, headers=headers, timeout=5.0)
+                    _debug_log(f"LIMITS API RESPONSE from {url}", {
+                        "status": resp.status_code,
+                        "body": resp.text[:500] if resp.text else "empty"
+                    }, force=self.debug)
+                    
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        
+                        # Parse Kimi/Moonshot format
+                        # Format: {"data": {"total_tokens": N, "limit": {"tier": "...", "max_tokens": N}}}
+                        usage_data = data.get("data", data)
+                        
+                        limits = usage_data.get("limit", usage_data.get("limits", {}))
+                        if limits or "total_tokens" in usage_data:
+                            self.api_limits = {
+                                "weekly_limit": limits.get("max_tokens") or limits.get("weekly"),
+                                "weekly_used": usage_data.get("total_tokens") or usage_data.get("weekly_used", 0),
+                                "short_limit": limits.get("short_term_max") or limits.get("short_window") or limits.get("window"),
+                                "short_used": usage_data.get("short_term_tokens") or usage_data.get("short_used", 0) or usage_data.get("window_used", 0),
+                                "tier": limits.get("tier", limits.get("name", "unknown")),
+                                "reset_weekly": limits.get("weekly_reset") or limits.get("reset_time"),
+                                "reset_short": limits.get("short_reset") or limits.get("window_reset"),
+                            }
+                            return self.api_limits
+                except Exception as e:
+                    _debug_log(f"LIMITS API ERROR for {url}", str(e)[:200], force=self.debug)
+                    continue
+                    
+        except Exception as e:
+            _debug_log("LIMITS FETCH ERROR", str(e)[:200], force=self.debug)
+        
+        return self.api_limits
+    
+    def get_api_limits_summary(self) -> dict:
+        """Get API limits, fetching if not already cached."""
+        if not self.api_limits:
+            self._fetch_api_limits()
+        return self.api_limits
 
     def get_usage_summary(self) -> str:
         """Get formatted usage summary."""
@@ -858,6 +943,17 @@ class Agent:
 
             # Track token usage
             self._update_usage(response)
+            
+            # Try to extract rate limit headers from response
+            # The OpenAI client doesn't expose headers directly, but we can try
+            try:
+                if hasattr(response, '_response') and hasattr(response._response, 'headers'):
+                    headers = response._response.headers
+                    self.api_limits['requests_remaining'] = headers.get('x-ratelimit-remaining-requests') or headers.get('x-ratelimit-remaining')
+                    self.api_limits['tokens_remaining'] = headers.get('x-ratelimit-remaining-tokens')
+                    self.api_limits['limit_reset'] = headers.get('x-ratelimit-reset')
+            except Exception:
+                pass
 
             choice = response.choices[0]
             assistant_msg = choice.message
