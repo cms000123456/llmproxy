@@ -1020,6 +1020,10 @@ async def proxy(request: Request, path: str):
         try:
             # Pass tools if provided in the request
             tools = payload.get("tools")
+            if tools:
+                logger.info(f"Passing {len(tools)} tools to local model {model}")
+            else:
+                logger.debug(f"No tools in request for local model {model}")
             
             result = await local_provider.chat_completions(
                 model=model,
