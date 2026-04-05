@@ -1,7 +1,17 @@
-# Docker Compose for Production
-# Optimized for production deployment with health checks and resource limits
+# Docker Compose for LLM Proxy
+# Usage:
+#   docker compose up -d                    # Core services only
+#   docker compose --profile dev up -d      # Core + dev tools (Redis, full monitoring)
+#   docker compose --profile monitoring up -d  # Add Prometheus/Grafana/Jaeger
+#   docker compose --profile dashboard up -d   # Add web dashboard
+#
+# All service ports are configurable via .env file
 
 services:
+  # ============================================================================
+  # CORE SERVICES (always started)
+  # ============================================================================
+  
   llmproxy:
     build:
       context: .
@@ -103,6 +113,103 @@ services:
       retries: 3
       start_period: 10s
 
+  # ============================================================================
+  # MONITORING PROFILE (Prometheus + Grafana + Jaeger)
+  # docker compose --profile monitoring up -d
+  # ============================================================================
+  
+  prometheus:
+    profiles: ["monitoring", "dev"]
+    image: prom/prometheus:v2.48.0
+    container_name: llmproxy-prometheus
+    ports:
+      - "${PROMETHEUS_PORT_MAPPING:-9091:9090}"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["monitoring", "dev"]
+    image: grafana/grafana:10.2.3
+    container_name: llmproxy-grafana
+    ports:
+      - "${GRAFANA_PORT_MAPPING:-3002:3000}"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3002
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  jaeger:
+    profiles: ["monitoring", "dev"]
+    image: jaegertracing/all-in-one:latest
+    container_name: llmproxy-jaeger
+    ports:
+      - "${JAEGER_UI_PORT_MAPPING:-16686:16686}"  # Jaeger UI
+      - "${JAEGER_OTLP_PORT_MAPPING:-4318:4318}"    # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+
+  # ============================================================================
+  # DASHBOARD PROFILE (React web UI)
+  # docker compose --profile dashboard up -d
+  # ============================================================================
+  
+  dashboard:
+    profiles: ["dashboard", "dev"]
+    image: nginx:alpine
+    container_name: llmproxy-dashboard
+    ports:
+      - "${DASHBOARD_PORT_MAPPING:-3000:80}"
+    volumes:
+      - ./dashboard/public:/usr/share/nginx/html:ro
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+    depends_on:
+      - llmproxy
+
+  # ============================================================================
+  # DEV PROFILE (Additional development tools)
+  # docker compose --profile dev up -d
+  # ============================================================================
+  
+  redis:
+    profiles: ["dev"]
+    image: redis:7-alpine
+    container_name: redis-dev
+    ports:
+      - "${REDIS_PORT_MAPPING:-6379:6379}"
+    volumes:
+      - redis-data:/data
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
 networks:
   llmproxy-net:
     driver: bridge
@@ -113,4 +220,10 @@ volumes:
   proxy-data:
     driver: local
   searxng-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  redis-data:
     driver: local
