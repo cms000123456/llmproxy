@@ -179,9 +179,9 @@ Guidelines:
   4. Summarize the actual content from the articles
   
   Example workflow for news:
-  - search_web: {"query": "EU news today", "limit": 3}
+  - search_web: {{"query": "EU news today", "limit": 3}}
   - (get results with URLs like "//duckduckgo.com/l/?uddg=https%3A%2F%2Fbbc.com...")
-  - fetch_url: {"url": "https://www.bbc.com/news/...", "max_length": 5000}
+  - fetch_url: {{"url": "https://www.bbc.com/news/...", "max_length": 5000}}
   - Summarize the fetched content for the user
 
 When making code changes:
