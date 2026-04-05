@@ -166,77 +166,84 @@ def _format_bottom_toolbar(agent, gpu_info: Optional[dict] = None, confirm_statu
     - GPU info
     - Confirm status
     """
-    parts = []
-    
-    # Model (truncated if needed)
-    model = agent.model
-    if len(model) > 25:
-        model = model[:23] + ".."
-    parts.append(("class:toolbar.model", f" {model} "))
-    parts.append(("class:toolbar.separator", "│"))
-    
-    # Token usage
-    total = agent.usage.get("total_tokens", 0)
-    inp = agent.usage.get("input_tokens", 0)
-    out = agent.usage.get("output_tokens", 0)
-    parts.append(("class:toolbar.tokens", f" Tokens: {total:,} (↑{inp:,} ↓{out:,}) "))
-    parts.append(("class:toolbar.separator", "│"))
-    
-    # Estimated cost
-    from llmproxy.cli_agent import PRICING
-    pricing = PRICING.get(agent.model, PRICING["default"])
-    input_cost = (inp / 1_000_000) * pricing["input"]
-    output_cost = (out / 1_000_000) * pricing["output"]
-    total_cost = input_cost + output_cost
-    cost_str = f"~${total_cost:.2f}" if total_cost >= 0.01 else f"~${total_cost:.3f}"
-    parts.append(("class:toolbar.cost", f" Cost: {cost_str} "))
-    parts.append(("class:toolbar.separator", "│"))
-    
-    # Proxy savings
-    from llmproxy.cli_agent import _fetch_proxy_savings
-    savings = _fetch_proxy_savings(agent.base_url)
-    if savings:
-        saved = savings.get("tokens_saved", 0)
-        cache_hits = savings.get("cache_hits", 0)
-        cache_rate = savings.get("cache_hit_rate", 0)
+    try:
+        parts = []
         
-        saved_cost = (saved / 1_000_000) * pricing["input"]
-        savings_parts = []
-        if saved > 0:
-            savings_parts.append(f"{saved:,} filtered")
-        if cache_hits > 0:
-            savings_parts.append(f"{cache_hits} cached")
-        if cache_rate > 0:
-            savings_parts.append(f"{cache_rate:.0%} hit")
+        # Model (truncated if needed)
+        model = agent.model if agent and hasattr(agent, 'model') else "unknown"
+        if len(model) > 25:
+            model = model[:23] + ".."
+        parts.append(("class:toolbar.model", f" {model} "))
+        parts.append(("class:toolbar.separator", "│"))
         
-        if savings_parts:
-            summary = " | ".join(savings_parts)
-            parts.append(("class:toolbar.savings", f" Proxy: {summary} (~${saved_cost:.2f}) "))
-            parts.append(("class:toolbar.separator", "│"))
-    
-    # Local model savings (if using local model)
-    if pricing.get("local", False) and total > 0:
-        cloud_pricing = PRICING["kimi-for-coding"]
-        cloud_cost = (inp / 1_000_000) * cloud_pricing["input"] + (out / 1_000_000) * cloud_pricing["output"]
-        if cloud_cost >= 0.01:
-            parts.append(("class:toolbar.local", f" Local saved: ~${cloud_cost:.2f} "))
-            parts.append(("class:toolbar.separator", "│"))
-    
-    # GPU info
-    if gpu_info:
-        free_vram = gpu_info.get("free_vram_gb", 0)
-        if free_vram > 0:
-            parts.append(("class:toolbar.gpu", f" VRAM: {free_vram:.1f}G "))
-            parts.append(("class:toolbar.separator", "│"))
-    
-    # Confirm status
-    if confirm_status:
-        if "ON" in confirm_status:
-            parts.append(("class:toolbar.confirm-on", " ✓ Confirm "))
-        else:
-            parts.append(("class:toolbar.confirm-off", " ⚡ Auto "))
-    
-    return FormattedText(parts)
+        # Token usage
+        total = agent.usage.get("total_tokens", 0) if agent and hasattr(agent, 'usage') else 0
+        inp = agent.usage.get("input_tokens", 0) if agent and hasattr(agent, 'usage') else 0
+        out = agent.usage.get("output_tokens", 0) if agent and hasattr(agent, 'usage') else 0
+        parts.append(("class:toolbar.tokens", f" Tokens: {total:,} (↑{inp:,} ↓{out:,}) "))
+        parts.append(("class:toolbar.separator", "│"))
+        
+        # Estimated cost
+        from llmproxy.cli_agent import PRICING
+        pricing = PRICING.get(model, PRICING["default"])
+        input_cost = (inp / 1_000_000) * pricing["input"]
+        output_cost = (out / 1_000_000) * pricing["output"]
+        total_cost = input_cost + output_cost
+        cost_str = f"~${total_cost:.2f}" if total_cost >= 0.01 else f"~${total_cost:.3f}"
+        parts.append(("class:toolbar.cost", f" Cost: {cost_str} "))
+        parts.append(("class:toolbar.separator", "│"))
+        
+        # Proxy savings
+        try:
+            from llmproxy.cli_agent import _fetch_proxy_savings
+            savings = _fetch_proxy_savings(agent.base_url) if agent and hasattr(agent, 'base_url') else {}
+            if savings:
+                saved = savings.get("tokens_saved", 0)
+                cache_hits = savings.get("cache_hits", 0)
+                cache_rate = savings.get("cache_hit_rate", 0)
+                
+                saved_cost = (saved / 1_000_000) * pricing["input"]
+                savings_parts = []
+                if saved > 0:
+                    savings_parts.append(f"{saved:,} filtered")
+                if cache_hits > 0:
+                    savings_parts.append(f"{cache_hits} cached")
+                if cache_rate > 0:
+                    savings_parts.append(f"{cache_rate:.0%} hit")
+                
+                if savings_parts:
+                    summary = " | ".join(savings_parts)
+                    parts.append(("class:toolbar.savings", f" Proxy: {summary} (~${saved_cost:.2f}) "))
+                    parts.append(("class:toolbar.separator", "│"))
+        except Exception:
+            pass
+        
+        # Local model savings (if using local model)
+        if pricing.get("local", False) and total > 0:
+            cloud_pricing = PRICING["kimi-for-coding"]
+            cloud_cost = (inp / 1_000_000) * cloud_pricing["input"] + (out / 1_000_000) * cloud_pricing["output"]
+            if cloud_cost >= 0.01:
+                parts.append(("class:toolbar.local", f" Local saved: ~${cloud_cost:.2f} "))
+                parts.append(("class:toolbar.separator", "│"))
+        
+        # GPU info
+        if gpu_info:
+            free_vram = gpu_info.get("free_vram_gb", 0)
+            if free_vram > 0:
+                parts.append(("class:toolbar.gpu", f" VRAM: {free_vram:.1f}G "))
+                parts.append(("class:toolbar.separator", "│"))
+        
+        # Confirm status
+        if confirm_status:
+            if "ON" in confirm_status:
+                parts.append(("class:toolbar.confirm-on", " ✓ Confirm "))
+            else:
+                parts.append(("class:toolbar.confirm-off", " ⚡ Auto "))
+        
+        return FormattedText(parts)
+    except Exception:
+        # Fallback if anything goes wrong
+        return FormattedText([("class:toolbar", " LLMProxy Agent ")])
 
 
 def _format_status_footer(agent, gpu_info: Optional[dict] = None, confirm_status: str = "") -> str:
