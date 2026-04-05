@@ -314,7 +314,7 @@ class LocalProvider:
         # If tools are provided, inject them into the system prompt
         if tools:
             tool_instructions = self._format_tools_as_text(tools)
-            logger.debug(f"Injecting {len(tools)} tools into system prompt")
+            logger.info(f"Injecting {len(tools)} tools into system prompt for {resolved_model}")
             
             # Find system message or add one
             system_found = False
@@ -322,7 +322,7 @@ class LocalProvider:
                 if msg.get("role") == "system":
                     msg["content"] = msg.get("content", "") + tool_instructions
                     system_found = True
-                    logger.debug("Appended tools to existing system message")
+                    logger.info(f"Appended {len(tools)} tools to existing system message")
                     break
             
             if not system_found:
@@ -330,9 +330,9 @@ class LocalProvider:
                     "role": "system",
                     "content": f"You are a helpful assistant. {tool_instructions}"
                 })
-                logger.debug("Created new system message with tools")
+                logger.info(f"Created new system message with {len(tools)} tools")
         else:
-            logger.debug("No tools provided for local model")
+            logger.info(f"No tools provided for local model {resolved_model}")
         
         # Build Ollama chat payload
         payload: dict[str, Any] = {
