@@ -644,6 +644,14 @@ async def gpu_info_endpoint():
     gpu_info = detect_gpus()
     recommendations = recommend_models_for_gpu(gpu_info)
     
+    # Check if Ollama is available (for hybrid mode)
+    ollama_available = False
+    try:
+        local_provider = get_local_provider()
+        ollama_available = await local_provider.is_available()
+    except Exception:
+        pass
+    
     return {
         "platform": gpu_info.platform,
         "total_vram_gb": round(gpu_info.total_vram_gb, 1),
@@ -666,6 +674,8 @@ async def gpu_info_endpoint():
             }
             for m in recommendations[:5]
         ],
+        "ollama_available": ollama_available,
+        "local_mode": settings.local_mode,
     }
 
 
@@ -769,25 +779,54 @@ async def auto_download_models_endpoint():
 async def list_models_endpoint():
     """List available models - OpenAI compatible.
     
-    In local mode, returns Ollama models.
-    In proxy mode, forwards to upstream.
+    In local mode, returns Ollama models only.
+    In proxy mode, returns upstream models merged with Ollama models (hybrid mode).
     """
     if settings.local_mode:
         local_provider = get_local_provider()
         models = await local_provider.list_models()
         return {"object": "list", "data": models}
-    else:
-        # Forward to upstream
-        if _http_client is None:
-            return JSONResponse(status_code=503, content={"error": "Proxy not ready"})
+    
+    # Hybrid mode: merge upstream and Ollama models
+    all_models = []
+    seen_ids = set()
+    ollama_available = False
+    
+    # Get upstream models first
+    if _http_client is not None:
         try:
             resp = await _http_client.get("/v1/models")
-            return JSONResponse(
-                status_code=resp.status_code,
-                content=resp.json(),
-            )
+            if resp.status_code == 200:
+                data = resp.json()
+                upstream_models = data.get("data", [])
+                for model in upstream_models:
+                    model_id = model.get("id")
+                    if model_id and model_id not in seen_ids:
+                        all_models.append(model)
+                        seen_ids.add(model_id)
         except Exception as e:
-            return JSONResponse(status_code=502, content={"error": str(e)})
+            logger.warning(f"Failed to fetch upstream models: {e}")
+    
+    # Also try to get Ollama models (if available)
+    try:
+        local_provider = get_local_provider()
+        if await local_provider.is_available():
+            ollama_available = True
+            ollama_models = await local_provider.list_models()
+            for model in ollama_models:
+                model_id = model.get("id")
+                if model_id and model_id not in seen_ids:
+                    all_models.append(model)
+                    seen_ids.add(model_id)
+    except Exception as e:
+        # Ollama not available, just log at debug level
+        logger.debug(f"Ollama not available for hybrid mode: {e}")
+    
+    return {
+        "object": "list",
+        "data": all_models,
+        "ollama_available": ollama_available,
+    }
 
 
 @app.get("/ab-test/status")
@@ -955,23 +994,40 @@ async def proxy(request: Request, path: str):
     )
 
     # LOCAL MODE: Route chat completions to local Ollama provider
-    if settings.local_mode and is_chat_completion:
+    # HYBRID MODE: Also route to Ollama if the model name looks like an Ollama model
+    model = payload.get("model", "")
+    is_ollama_model = ":" in model or model.startswith("local-")
+    
+    if is_chat_completion and (settings.local_mode or is_ollama_model):
         local_provider = get_local_provider()
         
-        # Use configured local model if not specified in request
-        model = payload.get("model") or settings.local_model
-        messages = payload.get("messages", [])
-        stream = payload.get("stream", False)
-        temperature = payload.get("temperature", 0.7)
-        max_tokens = payload.get("max_tokens")
+        # Check if Ollama is actually available
+        if await local_provider.is_available():
+            # Use configured local model if not specified in request
+            model = model or settings.local_model
+            messages = payload.get("messages", [])
+            stream = payload.get("stream", False)
+            temperature = payload.get("temperature", 0.7)
+            max_tokens = payload.get("max_tokens")
+            
+            # Apply filtering and compression for local models too
+            if isinstance(messages, list):
+                # 1. Filter
+                messages = filter_messages(messages, settings)
+                # 2. Compress
+                messages = compress_messages(messages, settings, model)
         
         try:
+            # Pass tools if provided in the request
+            tools = payload.get("tools")
+            
             result = await local_provider.chat_completions(
                 model=model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=stream,
+                tools=tools,
             )
             
             # Record metrics
