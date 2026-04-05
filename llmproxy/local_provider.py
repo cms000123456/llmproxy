@@ -54,6 +54,10 @@ MODEL_ALIASES = {
     "local-codellama": "codellama:13b",
     "local-codellama-small": "codellama:7b",
     "local-codellama-large": "codellama:34b",
+    # Gemma 4 variants (Google)
+    "local-gemma": "gemma4:12b",
+    "local-gemma-small": "gemma4:4b",
+    "local-gemma-large": "gemma4:27b",
 }
 
 # Recommended models with descriptions
@@ -82,6 +86,21 @@ RECOMMENDED_MODELS = {
         "description": "Latest general-purpose model",
         "vram_gb": 24,
         "strengths": ["General tasks", "Code + chat", "Reasoning"],
+    },
+    "gemma4:4b": {
+        "description": "Fast, efficient model from Google (Gemma 4)",
+        "vram_gb": 6,
+        "strengths": ["Quick responses", "Low VRAM", "Mobile-friendly"],
+    },
+    "gemma4:12b": {
+        "description": "Balanced performance from Google (Gemma 4)",
+        "vram_gb": 14,
+        "strengths": ["Coding", "Reasoning", "General tasks"],
+    },
+    "gemma4:27b": {
+        "description": "High quality from Google (Gemma 4)",
+        "vram_gb": 28,
+        "strengths": ["Complex coding", "Analysis", "Long context"],
     },
 }
 
@@ -146,6 +165,44 @@ class LocalProvider:
         except httpx.HTTPError as e:
             raise HTTPException(status_code=503, detail=f"Ollama error: {e}")
 
+    def _clean_messages_for_ollama(self, messages: list[dict]) -> list[dict]:
+        """Clean messages for Ollama by stripping tool-related fields.
+        
+        Ollama doesn't support OpenAI-style tool calls, so we need to remove
+        tool_calls, tool_call_id, and other tool-related fields to avoid 400 errors.
+        """
+        cleaned = []
+        for msg in messages:
+            # Create a copy with only the fields Ollama understands
+            clean_msg = {
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", "") or "",
+            }
+            
+            # Skip tool messages entirely (Ollama doesn't understand them)
+            if msg.get("role") == "tool":
+                # Convert tool results to assistant messages with context
+                tool_content = msg.get("content", "")
+                if tool_content:
+                    clean_msg["role"] = "assistant"
+                    clean_msg["content"] = f"[Tool result]: {tool_content[:500]}"
+                else:
+                    continue  # Skip empty tool messages
+            
+            # Remove tool_calls from assistant messages
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                # Keep the content but note that tools were used
+                content = msg.get("content", "") or ""
+                tool_names = [tc.get("function", {}).get("name", "unknown") 
+                             for tc in msg.get("tool_calls", [])]
+                if tool_names:
+                    content = f"{content}\n[Used tools: {', '.join(tool_names)}]"
+                clean_msg["content"] = content.strip()
+            
+            cleaned.append(clean_msg)
+        
+        return cleaned
+
     async def chat_completions(
         self,
         model: str,
@@ -159,10 +216,13 @@ class LocalProvider:
         """Create chat completion - OpenAI compatible format."""
         resolved_model = self._resolve_model(model)
         
+        # Clean messages for Ollama (strip tool-related fields)
+        cleaned_messages = self._clean_messages_for_ollama(messages)
+        
         # Build Ollama chat payload
         payload: dict[str, Any] = {
             "model": resolved_model,
-            "messages": messages,
+            "messages": cleaned_messages,
             "stream": stream,
             "options": {
                 "temperature": temperature,

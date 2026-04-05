@@ -236,3 +236,102 @@ class TestOpenAICompatibility:
         assert mock_response["object"] == "list"
         assert len(mock_response["data"]) == 1
         assert mock_response["data"][0]["object"] == "embedding"
+
+
+class TestCleanMessagesForOllama:
+    """Tests for _clean_messages_for_ollama method."""
+
+    def test_simple_messages_unchanged(self):
+        """Simple user/assistant messages should pass through unchanged."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+            {"role": "user", "content": "How are you?"},
+        ]
+        
+        cleaned = provider._clean_messages_for_ollama(messages)
+        
+        assert len(cleaned) == 3
+        assert cleaned[0] == {"role": "user", "content": "Hello"}
+        assert cleaned[1] == {"role": "assistant", "content": "Hi there!"}
+        assert cleaned[2] == {"role": "user", "content": "How are you?"}
+        print("✓ Simple messages unchanged")
+
+    def test_tool_messages_converted(self):
+        """Tool messages should be converted to assistant messages."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        messages = [
+            {"role": "user", "content": "What time is it?"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "function": {"name": "get_datetime"}}]},
+            {"role": "tool", "tool_call_id": "1", "content": "2024-01-15T10:30:00"},
+        ]
+        
+        cleaned = provider._clean_messages_for_ollama(messages)
+        
+        # Tool message should be converted to assistant
+        assert len(cleaned) == 3
+        assert cleaned[0] == {"role": "user", "content": "What time is it?"}
+        # Assistant with tool_calls should have note about tools
+        assert cleaned[1]["role"] == "assistant"
+        assert "Used tools" in cleaned[1]["content"]
+        # Tool message converted to assistant
+        assert cleaned[2]["role"] == "assistant"
+        assert "Tool result" in cleaned[2]["content"]
+        print("✓ Tool messages converted")
+
+    def test_tool_calls_removed_from_assistant(self):
+        """tool_calls field should be stripped from assistant messages."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        messages = [
+            {"role": "user", "content": "Read file test.txt"},
+            {"role": "assistant", "content": "I'll read it", "tool_calls": [{"id": "1", "function": {"name": "read_file", "arguments": "{}"}}]},
+        ]
+        
+        cleaned = provider._clean_messages_for_ollama(messages)
+        
+        assert len(cleaned) == 2
+        assert "tool_calls" not in cleaned[1]
+        assert cleaned[1]["role"] == "assistant"
+        assert "Used tools" in cleaned[1]["content"]
+        print("✓ Tool calls removed from assistant")
+
+    def test_empty_tool_messages_skipped(self):
+        """Empty tool messages should be skipped."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "tool", "tool_call_id": "1", "content": ""},  # Empty
+            {"role": "assistant", "content": "Hi!"},
+        ]
+        
+        cleaned = provider._clean_messages_for_ollama(messages)
+        
+        assert len(cleaned) == 2  # Empty tool message skipped
+        assert cleaned[0]["role"] == "user"
+        assert cleaned[1]["role"] == "assistant"
+        print("✓ Empty tool messages skipped")
+
+    def test_system_messages_preserved(self):
+        """System messages should be preserved."""
+        from llmproxy.local_provider import LocalProvider
+        
+        provider = LocalProvider()
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello"},
+        ]
+        
+        cleaned = provider._clean_messages_for_ollama(messages)
+        
+        assert len(cleaned) == 2
+        assert cleaned[0] == {"role": "system", "content": "You are a helpful assistant."}
+        print("✓ System messages preserved")
