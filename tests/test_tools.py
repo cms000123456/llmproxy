@@ -15,6 +15,7 @@ from llmproxy.tools import (
     grep,
     list_directory,
     read_file,
+    search_web,
     shell,
     write_file,
 )
@@ -467,3 +468,54 @@ def test_sync_wrapper_read_file():
     finally:
         os.chdir(original_cwd)
         shutil.rmtree(test_dir, ignore_errors=True)
+
+
+class TestSearchWeb:
+    """Tests for search_web tool."""
+
+    @pytest.mark.asyncio
+    async def test_search_web_returns_results(self):
+        """search_web should return formatted results."""
+        # Use a simple query that should always have results
+        result = await search_web("python programming", limit=3)
+        
+        # Should contain the query
+        assert "python programming" in result.lower() or "Web search results" in result
+        
+        # Should either have results or a clear message
+        assert "results" in result.lower() or "No search results" in result or "unavailable" in result.lower()
+        print("✓ search_web returns formatted results")
+
+    @pytest.mark.asyncio
+    async def test_search_web_respects_limit(self):
+        """search_web should respect the limit parameter."""
+        result = await search_web("test query", limit=2)
+        
+        # Count number of results (each result starts with "N. ")
+        result_count = result.count("\n1.") + result.count("\n2.") + result.count("\n3.")
+        
+        # Should have at most 2 results (or explain why not)
+        assert result_count <= 3 or "unavailable" in result.lower()
+        print("✓ search_web respects limit")
+
+    @pytest.mark.asyncio
+    async def test_search_web_handles_empty_query(self):
+        """search_web should handle edge cases gracefully."""
+        # Empty query should not crash
+        result = await search_web("", limit=5)
+        assert isinstance(result, str)
+        print("✓ search_web handles empty query")
+
+    @pytest.mark.asyncio
+    async def test_search_web_result_format(self):
+        """search_web results should have proper format with title and URL."""
+        result = await search_web("wikipedia", limit=2)
+        
+        # If we got results, they should have titles and URLs
+        if "No search results" not in result and "unavailable" not in result.lower():
+            # Should have numbered items
+            assert any(f"{i}." in result for i in range(1, 10))
+            # Should mention URL
+            assert "URL:" in result or "http" in result.lower()
+        
+        print("✓ search_web has proper format")

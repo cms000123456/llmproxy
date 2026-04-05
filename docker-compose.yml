@@ -76,6 +76,31 @@ services:
       retries: 3
       start_period: 60s
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8081:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8081/
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-ultrasecretkey}
+    volumes:
+      - searxng-data:/etc/searxng
+    networks:
+      - llmproxy-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 networks:
   llmproxy-net:
     driver: bridge
@@ -84,4 +109,6 @@ volumes:
   ollama:
     driver: local
   proxy-data:
+    driver: local
+  searxng-data:
     driver: local

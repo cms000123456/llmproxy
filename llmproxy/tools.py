@@ -407,8 +407,55 @@ print("__PYTHON_OUTPUT_END__")
         return f"Error executing Python: {exc}"
 
 
+async def _search_searxng(query: str, limit: int = 5) -> list[dict]:
+    """Search using SearXNG instance (if available).
+    
+    SearXNG is a privacy-respecting metasearch engine that returns structured JSON.
+    Tries local instance first (if running in docker), then public instances.
+    """
+    # Try local instance first (docker-compose), then public instances
+    searx_instances = [
+        "http://searxng:8080",  # Local docker instance
+        "http://localhost:8081",  # Localhost for non-docker
+        "https://search.sapti.me",  # Public instance
+        "https://search.bus-hit.me",
+        "https://search.demoniak.ch",
+    ]
+    
+    for instance in searx_instances:
+        try:
+            url = f"{instance}/search"
+            params = {
+                "q": query,
+                "format": "json",
+                "language": "en",
+            }
+            headers = {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+                "Accept": "application/json",
+            }
+            
+            async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+                resp = await client.get(url, params=params, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = []
+                    for r in data.get("results", [])[:limit]:
+                        results.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("url", ""),
+                            "snippet": r.get("content", "") or r.get("engines", [""])[0],
+                        })
+                    if results:
+                        return results
+        except Exception:
+            continue  # Try next instance
+    
+    return []  # No SearXNG instance worked
+
+
 async def search_web(query: str, limit: int = 5) -> str:
-    """Search the web using DuckDuckGo. Returns search results with titles, URLs, and snippets.
+    """Search the web. Tries SearXNG first, then DuckDuckGo as fallback.
     
     Args:
         query: The search query string
@@ -417,6 +464,22 @@ async def search_web(query: str, limit: int = 5) -> str:
     Returns:
         Formatted search results
     """
+    # Try SearXNG first (better API, less blocking)
+    try:
+        results = await _search_searxng(query, limit)
+        if results:
+            lines = [f"Web search results for: '{query}' ({len(results)} results)\n"]
+            for i, r in enumerate(results, 1):
+                lines.append(f"{i}. {r['title']}")
+                lines.append(f"   URL: {r['url']}")
+                if r['snippet']:
+                    lines.append(f"   {r['snippet'][:200]}...")
+                lines.append("")
+            return "\n".join(lines)
+    except Exception:
+        pass  # Fall through to DuckDuckGo
+    
+    # Fallback to DuckDuckGo
     try:
         # Use DuckDuckGo's HTML interface (no API key needed)
         # We'll use the lite version for simpler HTML parsing
@@ -1000,7 +1063,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_web",
-            "description": "Search the web for information. Use this tool when you need up-to-date information not in your training data.",
+            "description": "Search the web for information. Uses SearXNG or DuckDuckGo. Returns search results with titles, URLs, and snippets. Use this when you need up-to-date information not in your training data.",
             "parameters": {
                 "type": "object",
                 "properties": {
