@@ -986,10 +986,17 @@ class Agent:
                 return True, "simple file read"
         
         # Text processing without context needs
-        if len(task) < 150 and not any(x in task_lower for x in [
-            "project", " codebase", " refactor", " implement", 
-            "architecture", "design", "complex", "multiple files"
-        ]):
+        # First check for complex keywords that should NOT use subagent
+        complex_keywords = [
+            "project", "codebase", "refactor", "implement", 
+            "architecture", "design", "complex", "multiple files",
+            "change", "modify", "update", "fix bug", "debug",
+            "create", "add feature", "new feature", "rewrite",
+        ]
+        if any(x in task_lower for x in complex_keywords):
+            return False, ""
+        
+        if len(task) < 150:
             # Very short tasks likely don't need full context
             words = task.split()
             if len(words) < 20:
@@ -1009,8 +1016,6 @@ class Agent:
             sub = self.spawn_subagent()
             
             # Show user that subagent is handling this (if not in debug, still show briefly)
-            from rich.console import Console
-            console = Console()
             console.print(f"[dim cyan]🔄 Using subagent ({reason})...[/dim cyan]")
             
             result = sub.task(user_input)
