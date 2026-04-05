@@ -28,7 +28,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.tree import Tree
 
-from llmproxy.cli_agent import Agent, _get_project_id, _init_agent_md, _list_sessions
+from llmproxy.cli_agent import Agent, Subagent, _get_project_id, _init_agent_md, _list_sessions
 
 
 # Terminal state management for cleanup on exit

@@ -582,6 +582,50 @@ class Agent:
 
         return f"[dim]Tokens: {total:,} ({inp:,}↑ {out:,}↓) | Est: {cost_str}[/dim]"
 
+    def spawn_subagent(
+        self,
+        model: str | None = None,
+        max_tool_rounds: int = 3,
+        system_prompt: str | None = None,
+    ) -> "Subagent":
+        """Spawn a lightweight subagent for small tasks.
+        
+        Subagents use minimal context and are perfect for:
+        - Quick file reads/formatting
+        - Simple code analysis
+        - Text processing
+        - Validation tasks
+        
+        Args:
+            model: Model to use (defaults to a small local model like phi3:mini)
+            max_tool_rounds: Max tool rounds (default 3, lower than main agent)
+            system_prompt: Optional custom system prompt
+            
+        Returns:
+            Subagent instance ready for tasks
+            
+        Example:
+            sub = agent.spawn_subagent(model="phi3:mini")
+            result = sub.task("Format this JSON", json_content)
+            console.print(sub.get_usage_summary())  # See tokens saved
+        """
+        # Default to a small local model if available
+        if model is None:
+            # Try to use a small local model
+            small_models = ["phi3:mini", "gemma4:4b", "qwen2.5-coder:7b"]
+            model = self.model  # fallback
+            for m in small_models:
+                if m in PRICING and PRICING[m].get("local", False):
+                    model = m
+                    break
+        
+        return Subagent(
+            parent_agent=self,
+            model=model,
+            max_tool_rounds=max_tool_rounds,
+            system_prompt=system_prompt,
+        )
+
     def get_proxy_savings(self) -> str:
         """Get proxy token savings summary."""
         savings = _fetch_proxy_savings(self.base_url)
@@ -1077,3 +1121,174 @@ class Agent:
             return last_content
 
         return "⚠️ I reached the tool call limit but couldn't generate a final response. Please ask me to summarize what I found."
+
+
+class Subagent:
+    """Lightweight subagent for handling small tasks without full context.
+    
+    Subagents are ephemeral - they don't persist sessions and use minimal context.
+    They're perfect for:
+    - Quick file reads/formatting
+    - Simple code analysis
+    - Text processing
+    - Validation tasks
+    
+    Example:
+        sub = Subagent(agent, model="phi3:mini")  # Use small local model
+        result = sub.task("Format this JSON: {...}")
+    """
+    
+    def __init__(
+        self,
+        parent_agent: Agent,
+        model: str | None = None,
+        max_tool_rounds: int = 3,
+        system_prompt: str | None = None,
+    ):
+        """Create a subagent.
+        
+        Args:
+            parent_agent: The parent agent (inherits client config)
+            model: Model to use (defaults to parent's model if not specified)
+            max_tool_rounds: Max tool rounds for this subagent (default 3, lower than main)
+            system_prompt: Optional custom system prompt (minimal by default)
+        """
+        self.client = parent_agent.client
+        self.model = model or parent_agent.model
+        self.max_tool_rounds = max_tool_rounds
+        self.debug = parent_agent.debug
+        self.parent = parent_agent
+        
+        # Minimal system prompt for subagent
+        self.system_prompt = system_prompt or """You are a helpful assistant focused on specific small tasks.
+Be concise and direct. You have access to file and shell tools when needed.
+Complete the task efficiently without unnecessary explanation."""
+        
+        # Initialize with minimal context (no history)
+        self.messages = [{"role": "system", "content": self.system_prompt}]
+        self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    
+    def _update_usage(self, response: object) -> None:
+        """Update token usage from API response."""
+        usage = response.usage
+        if usage:
+            self.usage["input_tokens"] += usage.prompt_tokens or 0
+            self.usage["output_tokens"] += usage.completion_tokens or 0
+            self.usage["total_tokens"] += usage.total_tokens or 0
+            # Also update parent usage
+            self.parent.usage["input_tokens"] += usage.prompt_tokens or 0
+            self.parent.usage["output_tokens"] += usage.completion_tokens or 0
+            self.parent.usage["total_tokens"] += usage.total_tokens or 0
+    
+    def task(self, instruction: str, context: str | None = None) -> str:
+        """Execute a small task with minimal context.
+        
+        Args:
+            instruction: The task to perform
+            context: Optional additional context (prepended to instruction)
+            
+        Returns:
+            The result of the task
+        """
+        # Build minimal message
+        full_prompt = instruction
+        if context:
+            full_prompt = f"Context:\n{context}\n\nTask:\n{instruction}"
+        
+        self.messages.append({"role": "user", "content": full_prompt})
+        
+        # Use minimal tools for subagent (no complex tools)
+        minimal_tools = [
+            tool for tool in TOOL_DEFINITIONS 
+            if tool["function"]["name"] in ["read_file", "write_file", "shell", "grep", "list_directory"]
+        ]
+        
+        try:
+            for round_num in range(self.max_tool_rounds):
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self.messages,
+                    tools=minimal_tools if round_num == 0 else None,  # Only tools on first round
+                    temperature=0.3,
+                )
+                
+                self._update_usage(response)
+                
+                choice = response.choices[0]
+                assistant_msg = choice.message
+                self.messages.append(assistant_msg.model_dump())
+                
+                tool_calls = assistant_msg.tool_calls
+                if not tool_calls or choice.finish_reason != "tool_calls":
+                    return assistant_msg.content or "(no response)"
+                
+                # Execute tool calls
+                for tc in tool_calls:
+                    name = tc.function.name
+                    try:
+                        args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        args = {}
+                    
+                    if self.debug:
+                        console.print(f"[dim cyan]🔄 Subagent tool: {name}[/dim cyan]")
+                    
+                    result = asyncio.run(execute_tool(name, args))
+                    
+                    tool_call_id = tc.id or f"call_{hash(json.dumps(args, sort_keys=True))}"
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": result,
+                    })
+            
+            # Max rounds reached
+            return "⚠️ Subagent reached max rounds"
+            
+        except Exception as e:
+            return f"⚠️ Subagent error: {e}"
+    
+    def quick_format(self, content: str, format_type: str = "json") -> str:
+        """Quick formatting without tool calls.
+        
+        Args:
+            content: Content to format
+            format_type: Type of formatting (json, markdown, etc.)
+        """
+        prompt = f"Format the following as {format_type}. Return ONLY the formatted result, no explanation:\n\n{content}"
+        
+        self.messages.append({"role": "user", "content": prompt})
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.messages,
+                temperature=0.1,  # Very low for consistent formatting
+            )
+            
+            self._update_usage(response)
+            
+            result = response.choices[0].message.content or ""
+            self.messages.append({"role": "assistant", "content": result})
+            
+            return result
+            
+        except Exception as e:
+            return f"⚠️ Format error: {e}"
+    
+    def summarize(self, text: str, max_length: int = 100) -> str:
+        """Quick summarization.
+        
+        Args:
+            text: Text to summarize
+            max_length: Maximum length of summary in words
+        """
+        prompt = f"Summarize this in {max_length} words or less:\n\n{text}"
+        return self.task(prompt)
+    
+    def get_usage_summary(self) -> str:
+        """Get token usage for this subagent."""
+        total = self.usage.get("total_tokens", 0)
+        inp = self.usage.get("input_tokens", 0)
+        out = self.usage.get("output_tokens", 0)
+        return f"Subagent: {total:,} tokens (↑{inp:,} ↓{out:,})"
