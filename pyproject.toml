@@ -24,7 +24,7 @@ dependencies = [
     "opentelemetry-sdk>=1.22.0,<1.30",
     "opentelemetry-instrumentation-fastapi>=0.43b0,<0.50",
     "opentelemetry-instrumentation-httpx>=0.43b0,<0.50",
-    "opentelemetry-exporter-otlp>=1.22.0,<1.30",
+    "opentelemetry-exporter-otlp>=1.22.0,<1.41",
 ]
 
 [project.optional-dependencies]
